@@ -52,15 +52,17 @@
 </div>
 
 <script>
-// CallosCare App v4.7
+// CallosCare App v4.5
 const CallosCareApp = {
     API_BASE_URL: '/api',
-    VERSION: 'v4.7',
+    VERSION: 'v4.5',
     state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
 
     async init() {
         this.render(); this.loadUserFromLocalStorage();
-        try { this.state.appConfig = await this.api.getAppConfig(); this.state.currentStep = this.state.user ? 'home' : 'identification';
+        try {
+            this.state.appConfig = await this.api.getAppConfig();
+            this.state.currentStep = this.state.user ? 'home' : 'identification';
         } catch (error) { console.error("Initialization Error:", error); this.state.currentStep = 'error'; }
         this.render();
     },
@@ -86,6 +88,17 @@ const CallosCareApp = {
     startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[], suggestedProducts: [], userSelectedProducts: {}}; this.goToStep('step0_triage'); },
     goToStep(step) { this.state.currentStep = step; window.scrollTo(0,0); this.render(); },
     
+    selectCallusType(contentKey) {
+        const type = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
+        if (type) {
+            this.state.diagnosis.callusType = type.title.replace('O que é um ','').replace('?','');
+            this.render();
+            const nextButton = document.querySelector('.step-next-btn');
+            if(nextButton) nextButton.disabled = false;
+            setTimeout(() => nextButton?.focus(), 100);
+        }
+    },
+    
     selectOption(key, value, nextFocusId = null) {
         this.state.diagnosis[key] = value;
         this.render();
@@ -105,10 +118,8 @@ const CallosCareApp = {
         this.state.diagnosis[key] = a;
         this.render();
     },
-    
-    generateAndGoToResults() {
-        this.goToStep('step5_results');
-    },
+
+    generateAndGoToResults() { this.goToStep('step5_results'); },
 
     async saveDiagnosis() {
         this.showSpinner('save-diag-spinner');
@@ -143,7 +154,7 @@ const CallosCareApp = {
         const p=sm[this.state.currentStep]||0;
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
     },
-
+    
     generateTreatmentHtml(d, forSaving = false) {
         let fullHtml = '';
         let suggestedProducts = new Set();
@@ -169,9 +180,13 @@ const CallosCareApp = {
         if(hygieneRule) fullHtml += `<div class="p-4 border-l-4 border-gray-400 bg-gray-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${hygieneRule.title}</h3><div class="text-left">${hygieneRule.content_html}</div></div>`;
 
         if (d.painLevel >= 7 || d.inflammation) { const kit = findContent('emergency_kit_protocol'); if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`; }
-        const callusKey = d.callusType.toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
+        
+        let callusKey = (d.callusType || '').toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
+        if (d.callusType === "Olho-de-peixe") callusKey = 'verruga_protocol'; // Special case for verruga
+        
         const mainProtocol = findContent(callusKey);
         if(mainProtocol) { fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')}</h3><div class="text-left">${mainProtocol.content_html}</div></div>`; }
+        
         if (d.hasDeformity) { const deformityInfo = findContent('deformity_info'); if(deformityInfo) { fullHtml += `<div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">Nota sobre Deformidades</h3><div class="text-left"><p>${deformityInfo.content_html}</p></div></div>`; }}
         
         this.state.appConfig.products.forEach(p => { if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name); if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name); if(d.inflammation && p.category === 'inflamacao_dor') suggestedProducts.add(p.name); });
