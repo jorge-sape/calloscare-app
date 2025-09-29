@@ -22,8 +22,6 @@
         .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
         .zoom-modal .modal-content { background: transparent; border: none; padding: 0; max-width: 90vw; max-height: 90vh; }
         .zoom-modal img { width: 100%; height: 100%; object-fit: contain; }
-        details[open] summary .arrow-icon { transform: rotate(180deg); }
-        .product-link.user-choice { color: #27ae60; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -68,16 +66,30 @@ const CallosCareApp = {
     state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
 
     async init() {
-        this.render(); this.loadUserFromLocalStorage();
+        this.render();
+        this.loadUserFromLocalStorage();
         try {
             this.state.appConfig = await this.api.getAppConfig();
             this.state.currentStep = this.state.user ? 'home' : 'identification';
-        } catch (error) { console.error("Initialization Error:", error); this.state.currentStep = 'error'; }
+        } catch (error) {
+            console.error("Initialization Error:", error);
+            this.state.currentStep = 'error';
+        }
         this.render();
     },
 
-    loadUserFromLocalStorage() { try { const u = localStorage.getItem('calloscareUser'); if(u) this.state.user = JSON.parse(u); } catch(e){} },
-    saveUserToLocalStorage() { localStorage.setItem('calloscareUser', JSON.stringify(this.state.user)); },
+    loadUserFromLocalStorage() {
+        try {
+            const user = localStorage.getItem('calloscareUser');
+            if (user) this.state.user = JSON.parse(user);
+        } catch (e) {
+            localStorage.removeItem('calloscareUser');
+        }
+    },
+
+    saveUserToLocalStorage() {
+        localStorage.setItem('calloscareUser', JSON.stringify(this.state.user));
+    },
 
     api: {
         async getAppConfig() { const r = await fetch(`${CallosCareApp.API_BASE_URL}/getAppConfig`); if (!r.ok) throw new Error('Network response was not ok'); return r.json(); },
@@ -90,8 +102,16 @@ const CallosCareApp = {
         if(!fn || !ln || !e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){ alert('Por favor, preencha todos os campos com um email válido.'); return; }
         const ud = {firstName: fn, lastName: ln, email: e};
         this.showSpinner('save-client-spinner');
-        try { const res = await this.api.saveClientData(ud); this.state.user = { ...res.data[0] }; this.saveUserToLocalStorage(); this.goToStep('home');
-        } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
+        try {
+            const res = await this.api.saveClientData(ud);
+            this.state.user = { ...res.data[0] };
+            this.saveUserToLocalStorage();
+            this.goToStep('home');
+        } catch (err) {
+            alert(`Erro: ${err.message}`);
+        } finally {
+            this.hideSpinner('save-client-spinner');
+        }
     },
     
     startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[], suggestedProducts: [], userSelectedProducts: {}}; this.goToStep('step0_triage'); },
@@ -104,15 +124,10 @@ const CallosCareApp = {
         else { setTimeout(() => document.querySelector('.step-next-btn')?.focus(), 100); }
     },
 
-    toggleMultiOption(key,value, isExclusive = false){
+    toggleMultiOption(key,value){
         let a=this.state.diagnosis[key]||[];
         const i=a.indexOf(value);
-        if(isExclusive){ a.length = 0; a.push(value); }
-        else {
-            const n=a.indexOf('nenhum');
-            if(n>-1) a.splice(n,1);
-            if(i>-1){a.splice(i,1);} else {a.push(value);}
-        }
+        if(i>-1){a.splice(i,1);}else{a.push(value);}
         this.state.diagnosis[key] = a;
         this.render();
     },
@@ -135,7 +150,15 @@ const CallosCareApp = {
     showSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn=el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
     hideSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.add('hidden'); const btn=el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
     showImageZoom(event, imageUrl) { event.stopPropagation(); document.getElementById('zoomed-image').src = imageUrl; document.getElementById('image-zoom-modal').style.display = 'flex'; },
-    showDefinition(event, contentKey) { event.stopPropagation(); const item=this.state.appConfig.app_content.find(c => c.content_key === contentKey); if(item) { document.getElementById('definition-title').innerText = item.title; document.getElementById('definition-text').innerHTML = item.content_html; document.getElementById('definition-modal').style.display = 'block'; } },
+    showDefinition(event, contentKey) {
+        event.stopPropagation();
+        const item = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
+        if(item) {
+            document.getElementById('definition-title').innerText = item.title;
+            document.getElementById('definition-text').innerHTML = item.content_html;
+            document.getElementById('definition-modal').style.display = 'block';
+        }
+    },
     closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; document.getElementById('product-modal').style.display = 'none'; },
 
     updateProgressBar() {
@@ -147,13 +170,16 @@ const CallosCareApp = {
     
     generateTreatmentHtml(d, forSaving = false) {
         let fullHtml = '';
+        let suggestedProducts = new Set();
         const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
         if (d.painLevel >= 7 || d.inflammation) { const kit = findContent('emergency_kit_protocol'); if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`; }
         const callusKey = d.callusType.toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
         const mainProtocol = findContent(callusKey);
         if(mainProtocol) { fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')}</h3><div class="text-left">${mainProtocol.content_html}</div></div>`; }
         if (d.hasDeformity) { const deformityInfo = findContent('deformity_info'); if(deformityInfo) { fullHtml += `<div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">Nota sobre Deformidades</h3><div class="text-left"><p>${deformityInfo.content_html}</p></div></div>`; }}
-        return { fullHtml };
+        this.state.appConfig.products.forEach(p => { if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name); if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name); if(d.inflammation && p.category === 'inflamacao_dor') suggestedProducts.add(p.name); });
+        d.suggestedProducts = Array.from(suggestedProducts);
+        return { fullHtml, suggestedProducts: d.suggestedProducts };
     },
 
     render() {
@@ -162,6 +188,7 @@ const CallosCareApp = {
         let content = '';
         const d = this.state.diagnosis;
         document.getElementById('app-title').innerHTML = `CallosCare <span class="text-sm font-light opacity-75">${this.VERSION}</span>`;
+        
         const warningBanner = document.getElementById('diabetic-warning-banner');
         if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) { if(warningBanner) warningBanner.classList.remove('hidden'); } else { if(warningBanner) warningBanner.classList.add('hidden'); }
 
@@ -171,19 +198,25 @@ const CallosCareApp = {
             case 'identification': content = `...`; break;
             case 'home': content = `...`; break;
             case 'step0_triage': content = `...`; break;
-            case 'step1_callusType': content = `...`; break;
+            case 'step1_callusType':
+                const types = this.state.appConfig.app_content.filter(c => c.content_key.endsWith('_definition')) || [];
+                content = `
+                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 1: Qual o aspeto da lesão?</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">${types.map(t => {
+                        const typeName = t.title.replace('O que é um ','').replace('?','');
+                        return `<div class="calloscare-option-card border-2 p-3 text-center rounded-lg flex flex-col justify-between ${d.callusType===typeName?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('callusType','${typeName}')">
+                                    <img src="${t.image_url || ''}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url || ''}')">
+                                    <div>
+                                        <p class="font-semibold text-blue-600 underline cursor-pointer" onclick="CallosCareApp.showDefinition(event, '${t.content_key}')">${typeName}</p>
+                                        <p class="text-xs text-gray-500 mt-1">${t.short_desc || ''}</p>
+                                    </div>
+                                </div>`
+                    }).join('')}</div>
+                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep(CallosCareApp.state.diagnosis.is_diabetic ? 'step0_triage' : 'home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" onclick="CallosCareApp.goToStep('step2_location')" ${!d.callusType?'disabled':''}>Próximo</button></div>`;
+                break;
             case 'step2_location': content = `...`; break;
             case 'step3_details': content = `...`; break;
-            case 'step4_footType':
-                const footTypes = [{id:"seco",title:"Pés Secos",desc:"A pele parece repuxada..."},{id:"humido",title:"Pés Húmidos / Suados",desc:"Os pés transpiram com frequência."},{id:"normal",title:"Pés Normais",desc:"A pele é macia..."}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 4: Análise Final</h2>
-                    <div class="max-w-lg mx-auto space-y-8">
-                        <div><label class="block text-lg font-bold text-gray-700">Qual o seu tipo de pés?</label><div class="mt-2 space-y-3">${footTypes.map(ft => `<button class="calloscare-btn w-full text-left border p-4 rounded-lg ${d.footType===ft.id?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('footType','${ft.id}','deformity-yes-btn')"><strong class="block">${ft.title}</strong><span class="text-sm text-gray-500">${ft.desc}</span></button>`).join('')}</div></div>
-                        <div><label class="block text-lg font-bold text-gray-700">Tem alguma deformidade visível no pé?</label><p class="text-sm text-gray-500 mb-2">(ex: dedos curvados, joanete, etc.)</p><div class="mt-2 grid grid-cols-2 gap-4"><button id="deformity-yes-btn" class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===true?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',true)">Sim</button><button class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===false?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',false)">Não</button></div></div>
-                    </div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step3_details')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.generateAndGoToResults()" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.footType||d.hasDeformity===undefined?'disabled':''}>Sugerir Tratamento</button></div>`;
-                break;
+            case 'step4_footType': content = `...`; break;
             case 'step5_results':
                  const results = this.generateTreatmentHtml(d);
                  content = `
