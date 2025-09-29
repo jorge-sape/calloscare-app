@@ -53,7 +53,7 @@
 </div>
 
 <script>
-// CallosCare App v4.7 - IMPLEMENTAÇÃO COMPLETA DO ECRÃ DE RESULTADOS
+// CallosCare App v4.7 - CORRIGIDA COM AS KEYS EXATAS DA BASE DE DADOS
 const CallosCareApp = {
     API_BASE_URL: '/api',
     VERSION: 'v4.7',
@@ -160,7 +160,6 @@ const CallosCareApp = {
     closeModal() { 
         document.getElementById('image-zoom-modal').style.display = 'none'; 
         document.getElementById('definition-modal').style.display = 'none'; 
-        // Fechar também modais de produtos
         document.querySelectorAll('.modal').forEach(modal => {
             if(modal.id !== 'image-zoom-modal' && modal.id !== 'definition-modal') {
                 modal.remove();
@@ -175,7 +174,7 @@ const CallosCareApp = {
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
     },
 
-    // FUNÇÃO PRINCIPAL CORRIGIDA - SEGUINDO A LÓGICA DO DOCUMENTO
+    // FUNÇÃO PRINCIPAL CORRIGIDA - USANDO AS KEYS EXATAS DA BD
     generateTreatmentHtml(d) {
         let fullHtml = '';
         let suggestedProducts = new Set();
@@ -207,9 +206,9 @@ const CallosCareApp = {
             </div>
         `;
 
-        // 2. REGRA DE OURO DE HIGIENE (SEMPRE)
+        // 2. REGRA DE OURO DE HIGIENE (SEMPRE) - KEY: higiene_rule
         const hygieneContent = findContent('higiene_rule');
-        if(hygieneContent) {
+        if(hygieneContent && hygieneContent.content_html) {
             fullHtml += `
                 <div class="p-4 border-l-4 border-green-500 bg-green-50 rounded-lg mb-4 prose max-w-none">
                     <h3 class="font-bold text-center text-lg mb-3">${hygieneContent.title || 'Regra de Ouro de Higiene'}</h3>
@@ -218,10 +217,10 @@ const CallosCareApp = {
             `;
         }
 
-        // 3. KIT DE EMERGÊNCIA (CONDIÇÃO: painLevel >= 7 OU inflammation)
+        // 3. KIT DE EMERGÊNCIA (CONDIÇÃO: painLevel >= 7 OU inflammation) - KEY: emergency_kit_protocol
         if (d.painLevel >= 7 || d.inflammation) {
             const emergencyContent = findContent('emergency_kit_protocol');
-            if(emergencyContent) {
+            if(emergencyContent && emergencyContent.content_html) {
                 fullHtml += `
                     <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
                         <h3 class="text-red-700 font-bold text-center text-lg mb-3">
@@ -238,7 +237,7 @@ const CallosCareApp = {
             const callusKey = this.getCallusProtocolKey(d.callusType);
             const mainProtocol = findContent(callusKey);
             
-            if(mainProtocol) {
+            if(mainProtocol && mainProtocol.content_html) {
                 const processedContent = this.processProductMarkers(mainProtocol.content_html);
                 fullHtml += `
                     <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
@@ -256,10 +255,10 @@ const CallosCareApp = {
             }
         }
 
-        // 5. NOTA SOBRE DEFORMIDADES (CONDIÇÃO: hasDeformity === true)
+        // 5. NOTA SOBRE DEFORMIDADES (CONDIÇÃO: hasDeformity === true) - KEY: deformity_info
         if (d.hasDeformity) {
             const deformityContent = findContent('deformity_info');
-            if(deformityContent) {
+            if(deformityContent && deformityContent.content_html) {
                 fullHtml += `
                     <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
                         <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
@@ -281,14 +280,14 @@ const CallosCareApp = {
         return { fullHtml, suggestedProducts: d.suggestedProducts };
     },
 
-    // FUNÇÃO AUXILIAR: OBTER CHAVE DO PROTOCOLO PELO TIPO DE CALO
+    // FUNÇÃO AUXILIAR: OBTER CHAVE DO PROTOCOLO PELO TIPO DE CALO - CORRIGIDA
     getCallusProtocolKey(callusType) {
         const mappings = {
             'Calo Duro': 'calo_duro_protocol',
             'Calo Mole': 'calo_mole_protocol',
-            'Calo Vascular': 'calo_vascular_protocol', 
-            'Calo Neurovascular': 'calo_neurovascular_protocol',
-            'Olho-de-peixe': 'verruga_protocol'
+            'Calo em Grão/Semente': 'calo_grao_definition', // AINDA NÃO EXISTE PROTOCOLO
+            'Calosidade': 'calosidade_protocol',
+            'Olho-de-peixe': 'verruga_definition' // AINDA NÃO EXISTE PROTOCOLO
         };
         return mappings[callusType] || (callusType.toLowerCase().replace(/ /g, '_') + '_protocol');
     },
@@ -297,7 +296,6 @@ const CallosCareApp = {
     processProductMarkers(html) {
         if (!html) return html;
         
-        // Encontrar todos os marcadores {products:xxxx}
         const productMarkerRegex = /\{products:([^}]+)\}/g;
         let processedHtml = html;
         let match;
@@ -350,7 +348,7 @@ const CallosCareApp = {
         }
 
         // REGRA 2: Inflamação
-        if (d.inflammation) {
+        if (d.inflammation || d.painLevel >= 7) {
             this.state.appConfig.products.forEach(p => {
                 if (p.category === 'inflamacao_dor') suggestedProductsSet.add(p.name);
             });
@@ -362,6 +360,13 @@ const CallosCareApp = {
                 products.forEach(productName => suggestedProductsSet.add(productName));
             });
         }
+
+        // PRODUTOS BÁSICOS SEMPRE SUGERIDOS
+        this.state.appConfig.products.forEach(p => {
+            if (p.category === 'protecao' || p.category === 'esfoliacao') {
+                suggestedProductsSet.add(p.name);
+            }
+        });
     },
 
     // FUNÇÃO: MOSTRAR SELEÇÃO DE PRODUTOS POR CATEGORIA
@@ -481,6 +486,10 @@ const CallosCareApp = {
                                     <div class="border border-gray-200 rounded-lg p-4">
                                         <h5 class="font-bold text-md mb-1">${product.name}</h5>
                                         ${product.description ? `<p class="text-sm text-gray-600 mb-2">${product.description}</p>` : ''}
+                                        <button onclick="CallosCareApp.addProductToSelection('${product.name}', '${category}')" 
+                                                class="text-blue-600 text-sm underline mt-2">
+                                            adicionar à minha lista
+                                        </button>
                                     </div>
                                 `).join('')}
                             </div>
@@ -499,6 +508,31 @@ const CallosCareApp = {
         
         document.body.appendChild(modal);
         modal.style.display = 'block';
+    },
+
+    // FUNÇÃO AUXILIAR: ADICIONAR PRODUTO DIRETAMENTE DO CATÁLOGO
+    addProductToSelection(productName, category) {
+        if (!this.state.diagnosis.selectedProducts) {
+            this.state.diagnosis.selectedProducts = {};
+        }
+        
+        if (!this.state.diagnosis.selectedProducts[category]) {
+            this.state.diagnosis.selectedProducts[category] = [];
+        }
+        
+        if (!this.state.diagnosis.selectedProducts[category].includes(productName)) {
+            this.state.diagnosis.selectedProducts[category].push(productName);
+        }
+        
+        this.render();
+    },
+
+    // FUNÇÃO AUXILIAR: OBTER TODOS OS PRODUTOS SELECIONADOS
+    getAllSelectedProducts() {
+        const d = this.state.diagnosis;
+        if (!d.selectedProducts) return [];
+        
+        return Object.values(d.selectedProducts).flat();
     },
 
     // RENDER - ATUALIZADO PARA STEP5_RESULTS
@@ -679,14 +713,6 @@ const CallosCareApp = {
                 break;
         }
         container.innerHTML = `<div class="calloscare-step active">${content}</div>`;
-    },
-
-    // FUNÇÃO AUXILIAR: OBTER TODOS OS PRODUTOS SELECIONADOS
-    getAllSelectedProducts() {
-        const d = this.state.diagnosis;
-        if (!d.selectedProducts) return [];
-        
-        return Object.values(d.selectedProducts).flat();
     }
 };
 
