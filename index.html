@@ -22,6 +22,8 @@
         .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
         .zoom-modal .modal-content { background: transparent; border: none; padding: 0; max-width: 90vw; max-height: 90vh; }
         .zoom-modal img { width: 100%; height: 100%; object-fit: contain; }
+        details[open] summary .arrow-icon { transform: rotate(180deg); }
+        .product-link.user-choice { color: #27ae60; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -50,24 +52,27 @@
         <div id="definition-text" class="text-gray-700 prose"></div>
     </div>
 </div>
+<div id="product-modal" class="modal">
+    <div class="modal-content">
+        <span onclick="CallosCareApp.closeModal()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
+        <h2 id="product-title" class="text-2xl font-bold mb-4"></h2>
+        <div id="product-list" class="space-y-2"></div>
+    </div>
+</div>
 
 <script>
-// CallosCare App v4.4
+// CallosCare App v4.5
 const CallosCareApp = {
     API_BASE_URL: '/api',
-    VERSION: 'v4.4',
+    VERSION: 'v4.5',
     state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
 
     async init() {
-        this.render();
-        this.loadUserFromLocalStorage();
+        this.render(); this.loadUserFromLocalStorage();
         try {
             this.state.appConfig = await this.api.getAppConfig();
             this.state.currentStep = this.state.user ? 'home' : 'identification';
-        } catch (error) {
-            console.error("Initialization Error:", error);
-            this.state.currentStep = 'error';
-        }
+        } catch (error) { this.state.currentStep = 'error'; }
         this.render();
     },
 
@@ -75,8 +80,9 @@ const CallosCareApp = {
     saveUserToLocalStorage() { localStorage.setItem('calloscareUser', JSON.stringify(this.state.user)); },
 
     api: {
-        async getAppConfig() { const r = await fetch(`${CallosCareApp.API_BASE_URL}/getAppConfig`); if (!r.ok) throw new Error('Network response was not ok'); return r.json(); },
-        async saveClientData(d) { const r = await fetch(`${CallosCareApp.API_BASE_URL}/saveClient`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if (!r.ok) throw new Error('Failed to save client data'); return r.json(); },
+        async getAppConfig() { const r=await fetch(`${CallosCareApp.API_BASE_URL}/getAppConfig`); if (!r.ok) throw new Error('Network response was not ok'); return r.json(); },
+        async saveClientData(d) { const r=await fetch(`${CallosCareApp.API_BASE_URL}/saveClient`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if (!r.ok) throw new Error('Failed to save client data'); return r.json(); },
+        async saveDiagnosticData(d) { const r = await fetch(`${CallosCareApp.API_BASE_URL}/saveDiagnostic`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if (!r.ok) throw new Error('Failed to save diagnostic data'); return r.json(); },
     },
 
     async saveUser() {
@@ -84,69 +90,95 @@ const CallosCareApp = {
         if(!fn || !ln || !e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){ alert('Por favor, preencha todos os campos com um email válido.'); return; }
         const ud = {firstName: fn, lastName: ln, email: e};
         this.showSpinner('save-client-spinner');
-        try {
-            const res = await this.api.saveClientData(ud);
-            this.state.user = { ...res.data[0] };
-            this.saveUserToLocalStorage();
-            this.goToStep('home');
-        } catch (err) {
-            alert(`Erro: ${err.message}`);
-        } finally {
-            this.hideSpinner('save-client-spinner');
-        }
+        try { const res = await this.api.saveClientData(ud); this.state.user = { ...res.data[0] }; this.saveUserToLocalStorage(); this.goToStep('home');
+        } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
     },
     
-    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[]}; this.goToStep('step0_triage'); },
+    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[], suggestedProducts: [], userSelectedProducts: {}}; this.goToStep('step0_triage'); },
     goToStep(step) { this.state.currentStep = step; window.scrollTo(0,0); this.render(); },
     
-    selectCallusType(contentKey) {
-        const type = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
-        if (type) {
-            this.state.diagnosis.callusType = type.title.replace('O que é um ','').replace('?','');
-            this.render();
-            const nextButton = document.querySelector('.step-next-btn');
-            if(nextButton) nextButton.disabled = false;
-            setTimeout(() => nextButton?.focus(), 100);
-        }
-    },
-
     selectOption(key, value, nextFocusId = null) {
         this.state.diagnosis[key] = value;
         this.render();
-        if (nextFocusId) {
-            setTimeout(() => document.getElementById(nextFocusId)?.focus(), 100);
-        } else {
-            setTimeout(() => document.querySelector('.step-next-btn')?.focus(), 100);
-        }
+        if (nextFocusId) { setTimeout(() => document.getElementById(nextFocusId)?.focus(), 100);
+        } else { setTimeout(() => document.querySelector('.step-next-btn')?.focus(), 100); }
+    },
+    toggleMultiOption(key,value){ let a=this.state.diagnosis[key]||[]; const i=a.indexOf(value); if(i>-1){a.splice(i,1);}else{a.push(value);} this.state.diagnosis[key] = a; this.render(); },
+    
+    generateAndGoToResults() { this.goToStep('step5_results'); },
+
+    async saveDiagnosis() {
+        this.showSpinner('save-diag-spinner');
+        const d = this.state.diagnosis;
+        const resultsContent = this.generateTreatmentHtml(d, true);
+        const payload = { client_id: this.state.user.id, callus_type_name: d.callusType, pain_level: d.painLevel, inflammation: d.inflammation, locations: d.locations, foot_type: d.footType, has_deformity: d.hasDeformity, is_diabetic: d.is_diabetic, treatment_protocol_html: resultsContent.fullHtml, suggested_products_snapshot: JSON.stringify(d.suggestedProducts) };
+        try {
+            await this.api.saveDiagnosticData(payload);
+            d.isSaved = true;
+            this.render();
+        } catch (error) { alert(`Erro ao guardar: ${error.message}`);
+        } finally { this.hideSpinner('save-diag-spinner'); }
     },
 
-    toggleMultiOption(key,value){
-        let a=this.state.diagnosis[key]||[];
-        const i=a.indexOf(value);
-        if(i>-1){a.splice(i,1);}else{a.push(value);}
-        this.state.diagnosis[key] = a;
-        this.render();
-    },
-
-    showSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn = el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
-    hideSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.add('hidden'); const btn = el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
+    showSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn=el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
+    hideSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.add('hidden'); const btn=el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
     showImageZoom(event, imageUrl) { event.stopPropagation(); document.getElementById('zoomed-image').src = imageUrl; document.getElementById('image-zoom-modal').style.display = 'flex'; },
-    showDefinition(event, contentKey) {
-        event.stopPropagation();
-        const item = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
-        if(item) {
-            document.getElementById('definition-title').innerText = item.title;
-            document.getElementById('definition-text').innerHTML = item.content_html;
-            document.getElementById('definition-modal').style.display = 'block';
-        }
-    },
-    closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; },
+    showDefinition(event, contentKey) { event.stopPropagation(); const item=this.state.appConfig.app_content.find(c => c.content_key === contentKey); if(item) { document.getElementById('definition-title').innerText = item.title; document.getElementById('definition-text').innerHTML = item.content_html; document.getElementById('definition-modal').style.display = 'block'; } },
+    closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; document.getElementById('product-modal').style.display = 'none'; },
 
     updateProgressBar() {
         const pbc=document.getElementById('progress-bar-container'),pb=document.getElementById('progress-bar');if(!pbc||!pb)return;
         const sm={'step0_triage':5,'step1_callusType':15,'step2_location':30,'step3_details':45,'step4_footType':60,'step5_results':75};
         const p=sm[this.state.currentStep]||0;
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
+    },
+    
+    showProductModal(category) {
+        const productListEl = document.getElementById('product-list');
+        const modalTitle = document.getElementById('product-title');
+        const products = this.state.appConfig.products.filter(p => p.category === category);
+        const userSelected = this.state.diagnosis.userSelectedProducts[category] || [];
+        modalTitle.innerText = `Escolha produtos de ${category.replace(/_/g, ' ')}`;
+        productListEl.innerHTML = products.map(p => `<label class="flex items-center p-3 border rounded-lg hover:bg-gray-100 cursor-pointer"><input type="checkbox" name="product-choice" value="${p.name}" ${userSelected.includes(p.name)?'checked':''} class="h-4 w-4 text-blue-600"><div class="ml-3"><p class="font-semibold">${p.name}</p><p class="text-sm text-gray-600">${p.description}</p></div></label>`).join('');
+        const confirmButton = document.createElement('button');
+        confirmButton.innerText = 'Confirmar Escolha';
+        confirmButton.className = 'w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg mt-4';
+        confirmButton.onclick = () => { const selected = Array.from(document.querySelectorAll('input[name="product-choice"]:checked')).map(cb => cb.value); this.updateSelectedProducts(category, selected); this.closeModal(); };
+        productListEl.appendChild(confirmButton);
+        document.getElementById('product-modal').style.display = 'block';
+    },
+
+    updateSelectedProducts(category, newProducts) {
+        if (!this.state.diagnosis.userSelectedProducts) this.state.diagnosis.userSelectedProducts = {};
+        this.state.diagnosis.userSelectedProducts[category] = newProducts;
+        this.render();
+    },
+
+    generateTreatmentHtml(d, forSaving = false) {
+        let fullHtml = ''; let suggestedProducts = new Set();
+        const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
+        const parseProductPlaceholders = (text) => {
+            if(!text) return '';
+            return text.replace(/{products:([^}]+)}/g, (match, cat) => {
+                const userSelected = d.userSelectedProducts[cat];
+                let productsToShow = [];
+                if (userSelected && userSelected.length > 0) { productsToShow = userSelected; } 
+                else { const defaultProducts = this.state.appConfig.products.filter(p => p.category === cat); if (defaultProducts.length > 0) productsToShow.push(defaultProducts[0].name); }
+                productsToShow.forEach(p => suggestedProducts.add(p));
+                const isUserChoice = userSelected && userSelected.length > 0;
+                const textContent = productsToShow.length > 0 ? productsToShow.join(' e ') : `[sugestão de ${cat}]`;
+                if (forSaving) return textContent;
+                return `<strong class="product-link underline cursor-pointer text-blue-600 ${isUserChoice ? 'user-choice' : ''}" onclick="CallosCareApp.showProductModal('${cat}')">${textContent}</strong>`;
+            });
+        };
+        if (d.painLevel >= 7 || d.inflammation) { const kit = findContent('emergency_kit_protocol'); if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${parseProductPlaceholders(kit.content_html)}</div></div>`; }
+        const callusKey = d.callusType.toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
+        const mainProtocol = findContent(callusKey);
+        if(mainProtocol) { const parsedText = parseProductPlaceholders(mainProtocol.content_html); const seeMoreLink = `<span class="text-sm text-blue-600 cursor-pointer hover:underline ml-2" onclick="CallosCareApp.showDefinition(event, '${callusKey}')">(Veja o tratamento completo)</span>`; fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')} ${seeMoreLink}</h3><div class="text-left">${parsedText}</div></div>`; }
+        if (d.hasDeformity) { const deformityInfo = findContent('deformity_info'); if(deformityInfo) { const seeMoreDeformity = `<span class="text-sm text-blue-600 cursor-pointer hover:underline ml-2" onclick="CallosCareApp.showDefinition(event, 'deformity_info')">(veja mais informação)</span>`; fullHtml += `<div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">Nota sobre Deformidades</h3><div class="text-left"><p>${deformityInfo.content_html} ${seeMoreDeformity}</p></div></div>`; }}
+        this.state.appConfig.products.forEach(p => { if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name); if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name); if(d.inflammation && p.category === 'inflamacao_dor' && !(d.userSelectedProducts && d.userSelectedProducts['inflamacao_dor'])) suggestedProducts.add(p.name); });
+        d.suggestedProducts = Array.from(suggestedProducts);
+        return { fullHtml };
     },
 
     render() {
@@ -159,103 +191,34 @@ const CallosCareApp = {
         if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) { if(warningBanner) warningBanner.classList.remove('hidden'); } else { if(warningBanner) warningBanner.classList.add('hidden'); }
 
         switch (this.state.currentStep) {
-            case 'loading': content = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i></div>`; break;
-            case 'error': content = `<div class="text-center p-8 text-red-500">Ocorreu um erro ao carregar. Tente recarregar a página.</div>`; break;
-            case 'identification':
-                content = `
-                    <div class="max-w-lg mx-auto calloscare-step active">
-                        <h2 class="text-2xl font-semibold text-center mb-4">Identificação do Paciente</h2>
-                        <p class="text-center text-gray-600 mb-6">Para guardar o seu progresso e receber relatórios personalizados, preencha os seus dados.</p>
-                        <div class="space-y-4">
-                            <div><label for="user-first-name" class="block text-sm font-medium text-gray-700">Primeiro Nome*</label><input type="text" id="user-first-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                            <div><label for="user-last-name" class="block text-sm font-medium text-gray-700">Último Nome*</label><input type="text" id="user-last-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                            <div><label for="user-email" class="block text-sm font-medium text-gray-700">Email*</label><input type="email" id="user-email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                        </div>
-                        <div class="flex justify-end mt-6">
-                            <button onclick="CallosCareApp.saveUser()" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700">
-                                Guardar e Entrar <i id="save-client-spinner" class="fas fa-spinner fa-spin hidden ml-2"></i>
-                            </button>
-                        </div>
-                    </div>`;
-                break;
-            case 'home':
-                content = `
-                    <div class="max-w-md mx-auto text-center">
-                        <h2 class="text-2xl font-semibold mb-2">Bem-vindo(a), ${this.state.user.firstName}!</h2>
-                        <div class="space-y-4 mt-8">
-                            <button onclick="CallosCareApp.startDiagnosis()" class="w-full bg-blue-600 text-white font-bold py-4 px-6 rounded-lg text-lg"><i class="fas fa-plus-circle mr-3"></i> Iniciar Novo Diagnóstico</button>
-                            <button onclick="alert('Histórico será implementado a seguir.')" class="w-full bg-gray-600 text-white font-bold py-4 px-6 rounded-lg text-lg"><i class="fas fa-history mr-3"></i> Aceder ao Histórico</button>
-                        </div>
-                    </div>`;
-                break;
-            case 'step0_triage':
-                const warning = this.state.appConfig.app_content.find(c => c.content_key === 'diabetes_warning_page');
-                content = `
-                    <div class="calloscare-step active">
-                        <h2 class="text-2xl font-semibold text-center mb-6">Pergunta Importante de Segurança</h2>
-                        <div class="max-w-lg mx-auto space-y-4">
-                            <label class="block text-lg font-bold text-gray-700">É diabético ou tem neuropatia/má circulação sanguínea?</label>
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <button class="calloscare-btn p-4 rounded-lg border-2 border-red-500 text-red-700 hover:bg-red-50" onclick="CallosCareApp.state.diagnosis.is_diabetic=true; CallosCareApp.render();">Sim</button>
-                                <button class="calloscare-btn p-4 rounded-lg border-2 border-green-500 text-green-700 hover:bg-green-50" onclick="CallosCareApp.state.diagnosis.is_diabetic=false; CallosCareApp.goToStep('step1_callusType');">Não</button>
-                            </div>
-                            ${d.is_diabetic === true && warning ? `<div class="mt-6">${warning.content_html}</div><div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar ao Menu</button><button onclick="CallosCareApp.goToStep('step1_callusType')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Compreendo, desejo continuar</button></div>` : ''}
-                        </div>
-                    </div>`;
-                break;
-            case 'step1_callusType':
-                const types = this.state.appConfig.app_content.filter(c => c.content_key.endsWith('_definition')) || [];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 1: Qual o aspeto da lesão?</h2>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">${types.map(t => {
-                        const typeName = t.title.replace('O que é um ','').replace('?','');
-                        return `<div class="calloscare-option-card border-2 p-3 text-center rounded-lg flex flex-col justify-between ${d.callusType===typeName?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('callusType','${typeName}')">
-                                    <img src="${t.image_url || ''}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url || ''}')">
-                                    <div>
-                                        <p class="font-semibold text-blue-600 underline cursor-pointer" onclick="CallosCareApp.showDefinition(event, '${t.content_key}')">${typeName}</p>
-                                        <p class="text-xs text-gray-500 mt-1">${t.short_desc || ''}</p>
-                                    </div>
-                                </div>`
-                    }).join('')}</div>
-                    <div class="flex justify-between mt-8">
-                        <button onclick="CallosCareApp.goToStep(CallosCareApp.state.diagnosis.is_diabetic ? 'step0_triage' : 'home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button>
-                        <button onclick="CallosCareApp.goToStep('step2_location')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.callusType?'disabled':''}>Próximo</button>
-                    </div>`;
-                break;
-            case 'step2_location':
-                const locations = [ {id:"dedo_grande",text:"1. Dedo Grande"},{id:"dedo_pequeno",text:"2. Dedo Pequeno"},{id:"entre_dedos",text:"3. Entre os Dedos"},{id:"em_cima_dedos",text:"4. Em Cima dos Dedos"},{id:"bola_pe",text:"5. Bola do Pé"},{id:"calcanhar",text:"6. Calcanhar"},{id:"lateral",text:"7. Lateral do Pé"}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 2: Onde se localiza a dor?</h2>
-                    <p class="text-center text-gray-600 mb-4">Selecione uma ou mais zonas.</p>
-                    <div class="flex flex-col md:flex-row gap-8 items-start mt-6"><div class="w-full md:w-5/12"><img src="https://calos.webbizs.com/web/image/10582-43516c77/p%C3%A9%20desenho.webp" alt="Diagrama do Pé" class="w-full max-w-xs mx-auto"></div><div class="w-full md:w-7/12 grid grid-cols-1 gap-2">${locations.map(loc => `<button class="calloscare-btn w-full text-left border border-gray-300 p-3 rounded-lg ${(d.locations||[]).includes(loc.id)?'selected':''}" onclick="CallosCareApp.toggleMultiOption('locations','${loc.id}')">${loc.text}</button>`).join('')}</div></div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step1_callusType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.goToStep('step3_details')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.locations||d.locations.length===0?'disabled':''}>Próximo</button></div>`;
-                break;
-            case 'step3_details':
-                 const changes = [{id:'aumento_peso', text:'Aumento de peso'}, {id:'inchaço', text:'Inchaço (Edema) nos pés'}, {id:'nenhum', text:'Nenhuma das anteriores'}];
+            case 'loading': content = `...`; break;
+            case 'error': content = `...`; break;
+            case 'identification': content = `...`; break;
+            case 'home': content = `...`; break;
+            case 'step0_triage': content = `...`; break;
+            case 'step1_callusType': content = `...`; break;
+            case 'step2_location': content = `...`; break;
+            case 'step3_details': content = `...`; break;
+            case 'step4_footType': content = `...`; break;
+            
+            case 'step5_results':
+                 const results = this.generateTreatmentHtml(d);
                  content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 3: Detalhes dos Sintomas</h2>
-                    <div class="max-w-lg mx-auto space-y-8">
-                        <div><label class="block text-lg font-bold text-gray-700">Classifique o seu Nível de Dor</label><input type="range" id="pain-level-slider" min="0" max="10" value="${d.painLevel||0}" class="w-full h-3 mt-2" oninput="document.getElementById('pain-level-display').textContent=this.value" onchange="CallosCareApp.selectOption('painLevel',this.value,'inflammation-yes-btn')"><div class="flex justify-between text-sm text-gray-500 mt-1 px-1"><span>0</span><span>10</span></div><p class="text-center text-3xl font-bold mt-2" id="pain-level-display">${d.painLevel||0}</p></div>
-                        <div><label class="block text-lg font-bold text-gray-700">A zona está inflamada (vermelha, quente)?</label><div class="mt-2 grid grid-cols-2 gap-4"><button id="inflammation-yes-btn" class="calloscare-btn p-4 rounded-lg border ${d.inflammation===true?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('inflammation',true,'#physical-changes-group button')">Sim</button><button class="calloscare-btn p-4 rounded-lg border ${d.inflammation===false?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('inflammation',false,'#physical-changes-group button')">Não</button></div></div>
-                        <div id="physical-changes-group"><label class="block text-lg font-bold text-gray-700 mb-2">Notou alguma alteração física recente?</label><div class="space-y-2">${changes.map(c=>`<button class="physicalChanges-btn calloscare-btn w-full text-left border p-3 rounded-lg ${(d.physicalChanges||[]).includes(c.id)?'selected':''}" data-value="${c.id}" onclick="this.classList.toggle('selected');CallosCareApp.toggleMultiOption('physicalChanges','${c.id}',${c.id==='nenhum'})">${c.text}</button>`).join('')}</div></div>
+                    <h2 class="text-2xl font-semibold text-center mb-6">Plano de Tratamento Individualizado</h2>
+                    <div id="treatment-results-content" class="space-y-4">${results.fullHtml}</div>
+                    <div class="mt-6 p-4 bg-gray-100 rounded-lg">
+                        <h4 class="font-bold text-lg text-left">Lista de Produtos Sugeridos:</h4>
+                        <ul class="list-disc pl-5 mt-2 text-left">
+                            ${(d.suggestedProducts&&d.suggestedProducts.length>0)?d.suggestedProducts.map(p=>{let iuc=!1;for(const c in d.userSelectedProducts){if(d.userSelectedProducts[c].includes(p)){iuc=!0;break;}}return`<li class="${iuc?'text-green-600 font-bold':''}">${p}</li>`}).join(''):'<li>Nenhum produto específico.</li>'}
+                        </ul>
                     </div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step2_location')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${d.painLevel===undefined||d.inflammation===undefined||!d.physicalChanges||d.physicalChanges.length===0?'disabled':''}>Próximo</button></div>`;
+                    <div class="text-center mt-8"><button onclick="alert('A investigação será o próximo passo.')" class="bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700">Quer evitar que isto volte a acontecer? Clique aqui para descobrir a Causa definitiva.</button></div>
+                    <div class="flex justify-between items-center mt-8">${d.isSaved?`<span class="text-green-600 font-bold"><i class="fas fa-check-circle mr-2"></i>Diagnóstico Guardado</span><button onclick="CallosCareApp.goToStep('home')" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">Voltar ao Menu Principal</button>`:`<button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar e Editar</button><button onclick="CallosCareApp.saveDiagnosis()" id="save-diag-spinner" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg">Guardar Diagnóstico <i class="fas fa-spinner fa-spin hidden ml-2"></i></button>`}</div>`;
                 break;
-            case 'step4_footType':
-                const footTypes = [{id:"seco",title:"Pés Secos",desc:"A pele parece repuxada..."},{id:"humido",title:"Pés Húmidos / Suados",desc:"Os pés transpiram com frequência."},{id:"normal",title:"Pés Normais",desc:"A pele é macia..."}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 4: Análise Final</h2>
-                    <div class="max-w-lg mx-auto space-y-8">
-                        <div><label class="block text-lg font-bold text-gray-700">Qual o seu tipo de pés?</label><div class="mt-2 space-y-3">${footTypes.map(ft => `<button class="calloscare-btn w-full text-left border p-4 rounded-lg ${d.footType===ft.id?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('footType','${ft.id}','deformity-yes-btn')"><strong class="block">${ft.title}</strong><span class="text-sm text-gray-500">${ft.desc}</span></button>`).join('')}</div></div>
-                        <div><label class="block text-lg font-bold text-gray-700">Tem alguma deformidade visível no pé?</label><p class="text-sm text-gray-500 mb-2">(ex: dedos curvados, joanete, etc.)</p><div class="mt-2 grid grid-cols-2 gap-4"><button id="deformity-yes-btn" class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===true?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',true)">Sim</button><button class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===false?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',false)">Não</button></div></div>
-                    </div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step3_details')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="alert('O próximo passo é a Geração de Resultados!')" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.footType||d.hasDeformity===undefined?'disabled':''}>Sugerir Tratamento</button></div>`;
-                break;
-            default:
-                content = `<p class="text-center">Ocorreu um erro de navegação. <a href="#" onclick="CallosCareApp.goToStep('home')" class="text-blue-600">Voltar ao início.</a></p>`;
-                break;
+            default: content = `<p class="text-center">Ocorreu um erro de navegação.</p>`; break;
         }
         container.innerHTML = `<div class="calloscare-step active">${content}</div>`;
+        if (this.state.currentStep === 'identification') { this.populateDateDropdowns('dob-day', 'dob-month', 'dob-year'); }
     }
 };
 
