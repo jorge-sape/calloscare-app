@@ -31,13 +31,16 @@
         <h1 id="app-title" class="text-3xl font-bold text-white">CallosCare</h1>
         <p class="text-md text-blue-100">Assistente de Diagnóstico e Tratamento da DOR e dos seus Calos</p>
     </header>
+    <div id="diabetic-warning-banner" class="hidden p-3 mb-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+        <p><i class="fas fa-exclamation-triangle mr-2"></i><strong>Aviso:</strong> Como diabético/com má circulação, o auto-tratamento apresenta riscos. Use esta ferramenta como guia educativo e consulte sempre um profissional.</p>
+    </div>
     <div id="progress-bar-container" class="w-full bg-gray-200 rounded-full h-2.5 mb-8 hidden">
         <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full progress-bar-fill" style="width: 0%"></div>
     </div>
     <main id="calloscare-main-content"></main>
 </div>
 
-<div id="image-zoom-modal" class="modal zoom-modal flex items-center justify-center" onclick="CallosCareApp.closeModal()">
+<div id="image-zoom-modal" class="modal zoom-modal" onclick="CallosCareApp.closeModal()">
     <div class="modal-content"><img id="zoomed-image" src="" alt="Imagem Ampliada"></div>
 </div>
 <div id="definition-modal" class="modal">
@@ -49,23 +52,37 @@
 </div>
 
 <script>
-// CallosCare App v4.1
+// CallosCare App v4.2
 const CallosCareApp = {
     API_BASE_URL: '/api',
-    VERSION: 'v4.1',
+    VERSION: 'v4.2',
     state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
 
     async init() {
-        this.render(); this.loadUserFromLocalStorage();
+        this.render();
+        this.loadUserFromLocalStorage();
         try {
             this.state.appConfig = await this.api.getAppConfig();
             this.state.currentStep = this.state.user ? 'home' : 'identification';
-        } catch (error) { this.state.currentStep = 'error'; }
+        } catch (error) {
+            console.error("Initialization Error:", error);
+            this.state.currentStep = 'error';
+        }
         this.render();
     },
 
-    loadUserFromLocalStorage() { try { const u = localStorage.getItem('calloscareUser'); if(u) this.state.user = JSON.parse(u); } catch(e){} },
-    saveUserToLocalStorage() { localStorage.setItem('calloscareUser', JSON.stringify(this.state.user)); },
+    loadUserFromLocalStorage() {
+        try {
+            const user = localStorage.getItem('calloscareUser');
+            if (user) this.state.user = JSON.parse(user);
+        } catch (e) {
+            localStorage.removeItem('calloscareUser');
+        }
+    },
+
+    saveUserToLocalStorage() {
+        localStorage.setItem('calloscareUser', JSON.stringify(this.state.user));
+    },
 
     api: {
         async getAppConfig() { const r = await fetch(`${CallosCareApp.API_BASE_URL}/getAppConfig`); if (!r.ok) throw new Error('Network response was not ok'); return r.json(); },
@@ -82,7 +99,11 @@ const CallosCareApp = {
             this.state.user = { ...res.data[0] };
             this.saveUserToLocalStorage();
             this.goToStep('home');
-        } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
+        } catch (err) {
+            alert(`Erro: ${err.message}`);
+        } finally {
+            this.hideSpinner('save-client-spinner');
+        }
     },
     
     startDiagnosis() {
@@ -107,13 +128,15 @@ const CallosCareApp = {
         this.render();
     },
     
-    showSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.remove('hidden'); el.parentElement.setAttribute('disabled', 'true'); } },
-    hideSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.add('hidden'); el.parentElement.removeAttribute('disabled'); } },
+    showSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn = el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
+    hideSpinner(id) { const el = document.getElementById(id); if(el) { el.classList.add('hidden'); const btn = el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
+    
     showImageZoom(event, imageUrl) {
         event.stopPropagation();
         document.getElementById('zoomed-image').src = imageUrl;
         document.getElementById('image-zoom-modal').style.display = 'flex';
     },
+    
     showDefinition(event, contentKey) {
         event.stopPropagation();
         const item = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
@@ -123,6 +146,7 @@ const CallosCareApp = {
             document.getElementById('definition-modal').style.display = 'block';
         }
     },
+
     closeModal() {
         document.getElementById('image-zoom-modal').style.display = 'none';
         document.getElementById('definition-modal').style.display = 'none';
@@ -142,15 +166,19 @@ const CallosCareApp = {
         const d = this.state.diagnosis;
         document.getElementById('app-title').innerHTML = `CallosCare <span class="text-sm font-light opacity-75">${this.VERSION}</span>`;
         const warningBanner = document.getElementById('diabetic-warning-banner');
-        if (d.is_diabetic && this.state.currentStep.startsWith('step')) {
+        if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) {
             warningBanner.classList.remove('hidden');
         } else {
             warningBanner.classList.add('hidden');
         }
 
         switch (this.state.currentStep) {
-            case 'loading': content = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i></div>`; break;
-            case 'error': content = `<div class="text-center p-8 text-red-500">Ocorreu um erro ao carregar. Tente recarregar a página.</div>`; break;
+            case 'loading':
+                content = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i></div>`;
+                break;
+            case 'error':
+                content = `<div class="text-center p-8 text-red-500">Ocorreu um erro ao carregar. Tente recarregar a página.</div>`;
+                break;
             case 'identification':
                 content = `
                     <div class="max-w-lg mx-auto calloscare-step active">
@@ -200,15 +228,15 @@ const CallosCareApp = {
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">${types.map(t => {
                         const typeName = t.title.replace('O que é um ','').replace('?','');
                         return `<div class="calloscare-option-card border-2 p-3 text-center rounded-lg flex flex-col justify-between ${d.callusType===typeName?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectCallusType('${t.content_key}')">
-                                    <img src="${t.image_url}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url}')">
+                                    <img src="${t.image_url || ''}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url || ''}')">
                                     <div>
                                         <p class="font-semibold text-blue-600 underline cursor-pointer" onclick="CallosCareApp.showDefinition(event, '${t.content_key}')">${typeName}</p>
-                                        <p class="text-xs text-gray-500 mt-1">${t.short_desc}</p>
+                                        <p class="text-xs text-gray-500 mt-1">${t.short_desc || ''}</p>
                                     </div>
                                 </div>`
                     }).join('')}</div>
                     <div class="flex justify-between mt-8">
-                        <button onclick="CallosCareApp.goToStep('home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button>
+                        <button onclick="CallosCareApp.goToStep(d.is_diabetic ? 'step0_triage' : 'home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button>
                         <button onclick="CallosCareApp.goToStep('step2_location')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.callusType?'disabled':''}>Próximo</button>
                     </div>`;
                 break;
