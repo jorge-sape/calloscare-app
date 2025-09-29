@@ -174,123 +174,162 @@ const CallosCareApp = {
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
     },
 
-    // FUNÇÃO PRINCIPAL CORRIGIDA - USANDO AS KEYS EXATAS DA BD
-    generateTreatmentHtml(d) {
-        let fullHtml = '';
-        let suggestedProducts = new Set();
-        const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
+    // SUBSTITUA APENAS ESTA FUNÇÃO no seu código atual
+generateTreatmentHtml(d) {
+    let fullHtml = '';
+    let suggestedProducts = new Set();
+    const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
 
-        // 1. RESUMO DA AVALIAÇÃO (SEMPRE VISÍVEL)
-        fullHtml += `
-            <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
-                <h3 class="text-xl font-bold text-center mb-4 text-blue-800">📋 Resumo da Sua Avaliação</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div class="space-y-2">
-                        <p><strong>Tipo de Lesão:</strong> ${d.callusType || 'Não especificado'}</p>
-                        <p><strong>Localização:</strong> ${(d.locations || []).map(loc => {
-                            const locNames = {
-                                'dedo_grande': 'Dedo Grande', 'dedo_pequeno': 'Dedo Pequeno', 
-                                'entre_dedos': 'Entre os Dedos', 'em_cima_dedos': 'Em Cima dos Dedos',
-                                'bola_pe': 'Bola do Pé', 'calcanhar': 'Calcanhar', 'lateral': 'Lateral do Pé'
-                            };
-                            return locNames[loc] || loc;
-                        }).join(', ') || 'Não especificada'}</p>
-                        <p><strong>Nível de Dor:</strong> ${d.painLevel || 0}/10</p>
-                    </div>
-                    <div class="space-y-2">
-                        <p><strong>Inflamação:</strong> ${d.inflammation ? 'Sim' : 'Não'}</p>
-                        <p><strong>Tipo de Pé:</strong> ${d.footType === 'seco' ? 'Pés Secos' : d.footType === 'humido' ? 'Pés Húmidos' : d.footType === 'normal' ? 'Pés Normais' : 'Não especificado'}</p>
-                        <p><strong>Deformidade:</strong> ${d.hasDeformity ? 'Sim' : 'Não'}</p>
-                    </div>
+    console.log("🔍 DEBUG - Diagnóstico:", d);
+    console.log("🔍 DEBUG - Condição Emergência:", d.painLevel >= 7 || d.inflammation);
+
+    // 1. RESUMO DA AVALIAÇÃO (SEMPRE VISÍVEL)
+    fullHtml += `
+        <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+            <h3 class="text-xl font-bold text-center mb-4 text-blue-800">📋 Resumo da Sua Avaliação</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="space-y-2">
+                    <p><strong>Tipo de Lesão:</strong> ${d.callusType || 'Não especificado'}</p>
+                    <p><strong>Localização:</strong> ${(d.locations || []).map(loc => {
+                        const locNames = {
+                            'dedo_grande': 'Dedo Grande', 'dedo_pequeno': 'Dedo Pequeno', 
+                            'entre_dedos': 'Entre os Dedos', 'em_cima_dedos': 'Em Cima dos Dedos',
+                            'bola_pe': 'Bola do Pé', 'calcanhar': 'Calcanhar', 'lateral': 'Lateral do Pé'
+                        };
+                        return locNames[loc] || loc;
+                    }).join(', ') || 'Não especificada'}</p>
+                    <p><strong>Nível de Dor:</strong> ${d.painLevel || 0}/10</p>
+                </div>
+                <div class="space-y-2">
+                    <p><strong>Inflamação:</strong> ${d.inflammation ? 'Sim' : 'Não'}</p>
+                    <p><strong>Tipo de Pé:</strong> ${d.footType === 'seco' ? 'Pés Secos' : d.footType === 'humido' ? 'Pés Húmidos' : d.footType === 'normal' ? 'Pés Normais' : 'Não especificado'}</p>
+                    <p><strong>Deformidade:</strong> ${d.hasDeformity ? 'Sim' : 'Não'}</p>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
-        // 2. REGRA DE OURO DE HIGIENE (SEMPRE) - KEY: higiene_rule
-        const hygieneContent = findContent('higiene_rule');
-        if(hygieneContent && hygieneContent.content_html) {
+    // 2. REGRA DE OURO DE HIGIENE (SEMPRE)
+    const hygieneContent = findContent('higiene_rule');
+    if(hygieneContent && hygieneContent.content_html) {
+        fullHtml += `
+            <div class="p-4 border-l-4 border-green-500 bg-green-50 rounded-lg mb-4 prose max-w-none">
+                <h3 class="font-bold text-center text-lg mb-3">${hygieneContent.title || 'Regra de Ouro de Higiene'}</h3>
+                <div class="text-left">${this.processProductMarkers(hygieneContent.content_html)}</div>
+            </div>
+        `;
+    }
+
+    // 3. KIT DE EMERGÊNCIA (CONDIÇÃO: painLevel >= 7 OU inflammation)
+    if (d.painLevel >= 7 || d.inflammation) {
+        console.log("🆘 APLICANDO KIT DE EMERGÊNCIA - Dor:", d.painLevel, "Inflamação:", d.inflammation);
+        const emergencyContent = findContent('emergency_kit_protocol');
+        if(emergencyContent && emergencyContent.content_html) {
             fullHtml += `
-                <div class="p-4 border-l-4 border-green-500 bg-green-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="font-bold text-center text-lg mb-3">${hygieneContent.title || 'Regra de Ouro de Higiene'}</h3>
-                    <div class="text-left">${this.processProductMarkers(hygieneContent.content_html)}</div>
+                <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
+                    <h3 class="text-red-700 font-bold text-center text-lg mb-3">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>${emergencyContent.title || 'Kit de Emergência'}
+                    </h3>
+                    <div class="text-left">${this.processProductMarkers(emergencyContent.content_html)}</div>
                 </div>
             `;
+            // Adicionar produtos de emergência
+            this.state.appConfig.products.forEach(p => {
+                if(p.category === 'inflamacao_dor' || p.category === 'medicacao') {
+                    suggestedProducts.add(p.name);
+                }
+            });
+        } else {
+            console.log("❌ Kit de emergência não encontrado na BD");
         }
-
-        // 3. KIT DE EMERGÊNCIA (CONDIÇÃO: painLevel >= 7 OU inflammation) - KEY: emergency_kit_protocol
-        if (d.painLevel >= 7 || d.inflammation) {
-            const emergencyContent = findContent('emergency_kit_protocol');
-            if(emergencyContent && emergencyContent.content_html) {
-                fullHtml += `
-                    <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
-                        <h3 class="text-red-700 font-bold text-center text-lg mb-3">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>${emergencyContent.title || 'Kit de Emergência'}
-                        </h3>
-                        <div class="text-left">${this.processProductMarkers(emergencyContent.content_html)}</div>
-                    </div>
-                `;
-            }
-        }
+    }
+    
+    // 4. TRATAMENTO PRINCIPAL (ESPECÍFICO PARA O TIPO DE CALO)
+    if (d.callusType) {
+        const callusKey = this.getCallusProtocolKey(d.callusType);
+        console.log("🔍 Procurando protocolo:", callusKey, "para:", d.callusType);
+        const mainProtocol = findContent(callusKey);
         
-        // 4. TRATAMENTO PRINCIPAL (ESPECÍFICO PARA O TIPO DE CALO)
-        if (d.callusType) {
-            const callusKey = this.getCallusProtocolKey(d.callusType);
-            const mainProtocol = findContent(callusKey);
-            
-            if(mainProtocol && mainProtocol.content_html) {
-                const processedContent = this.processProductMarkers(mainProtocol.content_html);
-                fullHtml += `
-                    <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
-                        <h3 class="font-bold text-center text-lg mb-3">Protocolo para ${d.callusType}</h3>
-                        <div class="text-left">
-                            ${processedContent}
-                            <div class="text-center mt-4">
-                                <button onclick="CallosCareApp.showFullProtocol('${callusKey}')" class="text-blue-600 underline text-sm">
-                                    Veja o tratamento completo
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        // 5. NOTA SOBRE DEFORMIDADES (CONDIÇÃO: hasDeformity === true) - KEY: deformity_info
-        if (d.hasDeformity) {
-            const deformityContent = findContent('deformity_info');
-            if(deformityContent && deformityContent.content_html) {
-                fullHtml += `
-                    <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
-                        <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
-                        <div class="text-left">${this.processProductMarkers(deformityContent.content_html)}</div>
+        if(mainProtocol && mainProtocol.content_html) {
+            const processedContent = this.processProductMarkers(mainProtocol.content_html);
+            fullHtml += `
+                <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
+                    <h3 class="font-bold text-center text-lg mb-3">Protocolo para ${d.callusType}</h3>
+                    <div class="text-left">
+                        ${processedContent}
                         <div class="text-center mt-4">
-                            <button onclick="CallosCareApp.showFullProtocol('deformity_info')" class="text-blue-600 underline text-sm">
-                                veja mais informação
+                            <button onclick="CallosCareApp.showFullProtocol('${callusKey}')" class="text-blue-600 underline text-sm">
+                                Veja o tratamento completo
                             </button>
                         </div>
                     </div>
+                </div>
+            `;
+            
+            // Adicionar produtos do protocolo principal
+            this.state.appConfig.products.forEach(p => {
+                if(p.category === 'esfoliacao' || p.category === 'hidratacao' || p.category === 'protecao') {
+                    suggestedProducts.add(p.name);
+                }
+            });
+        } else {
+            console.log("❌ Protocolo não encontrado:", callusKey);
+            // Fallback: usar definição se não houver protocolo
+            const definitionKey = d.callusType.toLowerCase().replace(/ /g, '_').replace(/\//g, '_') + '_definition';
+            const definition = findContent(definitionKey);
+            if(definition && definition.content_html) {
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="font-bold text-center text-lg mb-3">Informação sobre ${d.callusType}</h3>
+                        <div class="text-left">
+                            ${definition.content_html}
+                            <p class="mt-4 text-orange-600"><strong>Nota:</strong> Protocolo de tratamento específico em desenvolvimento.</p>
+                        </div>
+                    </div>
                 `;
             }
         }
+    }
 
-        // 6. GERAR LISTA DE PRODUTOS SUGERIDOS (REGRAS 1, 2 E 3)
-        this.generateSuggestedProducts(d, suggestedProducts);
-        d.suggestedProducts = Array.from(suggestedProducts);
-        
-        return { fullHtml, suggestedProducts: d.suggestedProducts };
-    },
+    // 5. NOTA SOBRE DEFORMIDADES (CONDIÇÃO: hasDeformity === true)
+    if (d.hasDeformity) {
+        const deformityContent = findContent('deformity_info');
+        if(deformityContent && deformityContent.content_html) {
+            fullHtml += `
+                <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
+                    <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
+                    <div class="text-left">${this.processProductMarkers(deformityContent.content_html)}</div>
+                    <div class="text-center mt-4">
+                        <button onclick="CallosCareApp.showFullProtocol('deformity_info')" class="text-blue-600 underline text-sm">
+                            veja mais informação
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    // 6. GERAR LISTA DE PRODUTOS SUGERIDOS (REGRAS 1, 2 E 3)
+    this.generateSuggestedProducts(d, suggestedProducts);
+    d.suggestedProducts = Array.from(suggestedProducts);
+    
+    console.log("🔍 Produtos sugeridos finais:", d.suggestedProducts);
+    
+    return { fullHtml, suggestedProducts: d.suggestedProducts };
+},
 
     // FUNÇÃO AUXILIAR: OBTER CHAVE DO PROTOCOLO PELO TIPO DE CALO - CORRIGIDA
     getCallusProtocolKey(callusType) {
-        const mappings = {
-            'Calo Duro': 'calo_duro_protocol',
-            'Calo Mole': 'calo_mole_protocol',
-            'Calo em Grão/Semente': 'calo_grao_definition', // AINDA NÃO EXISTE PROTOCOLO
-            'Calosidade': 'calosidade_protocol',
-            'Olho-de-peixe': 'verruga_definition' // AINDA NÃO EXISTE PROTOCOLO
-        };
-        return mappings[callusType] || (callusType.toLowerCase().replace(/ /g, '_') + '_protocol');
-    },
+    const mappings = {
+        'Calo Duro': 'calo_duro_protocol',
+        'Calo Mole': 'calo_mole_protocol', 
+        'Calosidade': 'calosidade_protocol',
+        // Para calos sem protocolo específico, usar definição como fallback
+        'Calo em Grão/Semente': 'calo_grao_definition',
+        'Olho-de-peixe': 'verruga_definition'
+    };
+    return mappings[callusType] || (callusType.toLowerCase().replace(/ /g, '_').replace(/\//g, '_') + '_protocol');
+},
 
     // FUNÇÃO CRÍTICA: PROCESSAR MARCADORES DE PRODUTOS {products:categoria}
     processProductMarkers(html) {
@@ -336,38 +375,44 @@ const CallosCareApp = {
 
     // FUNÇÃO: GERAR PRODUTOS SUGERIDOS BASEADOS NAS REGRAS
     generateSuggestedProducts(d, suggestedProductsSet) {
-        // REGRA 1: Tipo de Pé
-        if (d.footType === 'seco') {
-            this.state.appConfig.products.forEach(p => {
-                if (p.category === 'hidratacao') suggestedProductsSet.add(p.name);
-            });
-        } else if (d.footType === 'humido') {
-            this.state.appConfig.products.forEach(p => {
-                if (p.category === 'controlo_humidade') suggestedProductsSet.add(p.name);
-            });
-        }
-
-        // REGRA 2: Inflamação
-        if (d.inflammation || d.painLevel >= 7) {
-            this.state.appConfig.products.forEach(p => {
-                if (p.category === 'inflamacao_dor') suggestedProductsSet.add(p.name);
-            });
-        }
-
-        // REGRA 3: Produtos selecionados pelo utilizador
-        if (d.selectedProducts) {
-            Object.values(d.selectedProducts).forEach(products => {
-                products.forEach(productName => suggestedProductsSet.add(productName));
-            });
-        }
-
-        // PRODUTOS BÁSICOS SEMPRE SUGERIDOS
+    console.log("🔍 Gerando produtos sugeridos para:", d);
+    
+    // REGRA 1: Tipo de Pé
+    if (d.footType === 'seco') {
         this.state.appConfig.products.forEach(p => {
-            if (p.category === 'protecao' || p.category === 'esfoliacao') {
+            if (p.category === 'hidratacao') suggestedProductsSet.add(p.name);
+        });
+    } else if (d.footType === 'humido') {
+        this.state.appConfig.products.forEach(p => {
+            if (p.category === 'controlo_humidade') suggestedProductsSet.add(p.name);
+        });
+    }
+
+    // REGRA 2: Inflamação ou Dor alta
+    if (d.inflammation || d.painLevel >= 7) {
+        this.state.appConfig.products.forEach(p => {
+            if (p.category === 'inflamacao_dor' || p.category === 'medicacao') {
                 suggestedProductsSet.add(p.name);
             }
         });
-    },
+    }
+
+    // REGRA 3: Produtos selecionados pelo utilizador
+    if (d.selectedProducts) {
+        Object.values(d.selectedProducts).forEach(products => {
+            products.forEach(productName => suggestedProductsSet.add(productName));
+        });
+    }
+
+    // PRODUTOS BÁSICOS SEMPRE SUGERIDOS
+    this.state.appConfig.products.forEach(p => {
+        if (p.category === 'protecao' || p.category === 'esfoliacao') {
+            suggestedProductsSet.add(p.name);
+        }
+    });
+
+    console.log("🔍 Produtos após regras:", Array.from(suggestedProductsSet));
+},
 
     // FUNÇÃO: MOSTRAR SELEÇÃO DE PRODUTOS POR CATEGORIA
     showProductSelection(category) {
