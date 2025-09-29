@@ -52,17 +52,15 @@
 </div>
 
 <script>
-// CallosCare App v4.5
+// CallosCare App v4.6
 const CallosCareApp = {
     API_BASE_URL: '/api',
-    VERSION: 'v4.5',
+    VERSION: 'v4.6',
     state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
 
     async init() {
         this.render(); this.loadUserFromLocalStorage();
-        try {
-            this.state.appConfig = await this.api.getAppConfig();
-            this.state.currentStep = this.state.user ? 'home' : 'identification';
+        try { this.state.appConfig = await this.api.getAppConfig(); this.state.currentStep = this.state.user ? 'home' : 'identification';
         } catch (error) { console.error("Initialization Error:", error); this.state.currentStep = 'error'; }
         this.render();
     },
@@ -85,7 +83,7 @@ const CallosCareApp = {
         } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
     },
     
-    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[], suggestedProducts: [], userSelectedProducts: {}}; this.goToStep('step0_triage'); },
+    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[]}; this.goToStep('step0_triage'); },
     goToStep(step) { this.state.currentStep = step; window.scrollTo(0,0); this.render(); },
     
     selectCallusType(contentKey) {
@@ -118,7 +116,7 @@ const CallosCareApp = {
         this.state.diagnosis[key] = a;
         this.render();
     },
-
+    
     generateAndGoToResults() { this.goToStep('step5_results'); },
 
     async saveDiagnosis() {
@@ -160,7 +158,6 @@ const CallosCareApp = {
         let suggestedProducts = new Set();
         const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
         
-        // Resumo da Avaliação
         const locationsText = (d.locations || []).join(', ').replace(/_/g, ' ');
         const footTypeText = {seco: 'Pés Secos', humido: 'Pés Húmidos', normal: 'Pés Normais'}[d.footType] || 'N/A';
         const deformityText = d.hasDeformity ? 'Sim' : 'Não';
@@ -175,14 +172,13 @@ const CallosCareApp = {
                 </div>
             </div>`;
         
-        // Regra de Higiene
         const hygieneRule = findContent('higiene_rule');
         if(hygieneRule) fullHtml += `<div class="p-4 border-l-4 border-gray-400 bg-gray-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${hygieneRule.title}</h3><div class="text-left">${hygieneRule.content_html}</div></div>`;
 
         if (d.painLevel >= 7 || d.inflammation) { const kit = findContent('emergency_kit_protocol'); if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`; }
         
         let callusKey = (d.callusType || '').toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
-        if (d.callusType === "Olho-de-peixe") callusKey = 'verruga_protocol'; // Special case for verruga
+        if (d.callusType === "Olho-de-peixe") callusKey = 'verruga_protocol';
         
         const mainProtocol = findContent(callusKey);
         if(mainProtocol) { fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')}</h3><div class="text-left">${mainProtocol.content_html}</div></div>`; }
