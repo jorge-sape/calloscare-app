@@ -22,6 +22,7 @@
         .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
         .zoom-modal .modal-content { background: transparent; border: none; padding: 0; max-width: 90vw; max-height: 90vh; }
         .zoom-modal img { width: 100%; height: 100%; object-fit: contain; }
+        details[open] summary .arrow-icon { transform: rotate(180deg); }
         .product-link.user-choice { color: #27ae60; font-weight: bold; }
     </style>
 </head>
@@ -68,7 +69,9 @@ const CallosCareApp = {
 
     async init() {
         this.render(); this.loadUserFromLocalStorage();
-        try { this.state.appConfig = await this.api.getAppConfig(); this.state.currentStep = this.state.user ? 'home' : 'identification';
+        try {
+            this.state.appConfig = await this.api.getAppConfig();
+            this.state.currentStep = this.state.user ? 'home' : 'identification';
         } catch (error) { console.error("Initialization Error:", error); this.state.currentStep = 'error'; }
         this.render();
     },
@@ -101,21 +104,31 @@ const CallosCareApp = {
         else { setTimeout(() => document.querySelector('.step-next-btn')?.focus(), 100); }
     },
 
-    toggleMultiOption(key,value){
+    toggleMultiOption(key,value, isExclusive = false){
         let a=this.state.diagnosis[key]||[];
         const i=a.indexOf(value);
-        if(i>-1){a.splice(i,1);}else{a.push(value);}
+        if(isExclusive){ a.length = 0; a.push(value); }
+        else {
+            const n=a.indexOf('nenhum');
+            if(n>-1) a.splice(n,1);
+            if(i>-1){a.splice(i,1);} else {a.push(value);}
+        }
         this.state.diagnosis[key] = a;
         this.render();
     },
 
-    generateAndGoToResults() { this.goToStep('step5_results'); },
+    generateAndGoToResults() {
+        const d = this.state.diagnosis;
+        const results = this.generateTreatmentHtml(d);
+        d.treatment_html = results.fullHtml;
+        d.suggestedProducts = results.suggestedProducts;
+        this.goToStep('step5_results');
+    },
 
     async saveDiagnosis() {
         this.showSpinner('save-diag-spinner');
         const d = this.state.diagnosis;
-        const resultsContent = this.generateTreatmentHtml(d, true);
-        const payload = { client_id: this.state.user.id, callus_type_name: d.callusType, pain_level: d.painLevel, inflammation: d.inflammation, locations: d.locations, foot_type: d.footType, has_deformity: d.hasDeformity, is_diabetic: d.is_diabetic, treatment_protocol_html: resultsContent.fullHtml, suggested_products_snapshot: JSON.stringify(d.suggestedProducts) };
+        const payload = { client_id: this.state.user.id, callus_type_name: d.callusType, pain_level: d.painLevel, inflammation: d.inflammation, locations: d.locations, foot_type: d.footType, has_deformity: d.hasDeformity, is_diabetic: d.is_diabetic, treatment_protocol_html: d.treatment_html, suggested_products_snapshot: JSON.stringify(d.suggestedProducts) };
         try {
             await this.api.saveDiagnosticData(payload);
             d.isSaved = true;
@@ -127,15 +140,7 @@ const CallosCareApp = {
     showSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn=el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
     hideSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.add('hidden'); const btn=el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
     showImageZoom(event, imageUrl) { event.stopPropagation(); document.getElementById('zoomed-image').src = imageUrl; document.getElementById('image-zoom-modal').style.display = 'flex'; },
-    showDefinition(event, contentKey) {
-        event.stopPropagation();
-        const item = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
-        if(item) {
-            document.getElementById('definition-title').innerText = item.title;
-            document.getElementById('definition-text').innerHTML = item.content_html;
-            document.getElementById('definition-modal').style.display = 'block';
-        }
-    },
+    showDefinition(event, contentKey) { event.stopPropagation(); const item=this.state.appConfig.app_content.find(c => c.content_key === contentKey); if(item) { document.getElementById('definition-title').innerText = item.title; document.getElementById('definition-text').innerHTML = item.content_html; document.getElementById('definition-modal').style.display = 'block'; } },
     closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; document.getElementById('product-modal').style.display = 'none'; },
 
     updateProgressBar() {
@@ -145,19 +150,23 @@ const CallosCareApp = {
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
     },
     
-    generateTreatmentHtml(d, forSaving = false) {
-        let fullHtml = ''; let suggestedProducts = new Set();
+    generateTreatmentHtml(d) {
+        let fullHtml = '';
+        let suggestedProducts = new Set();
         const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
-        if (d.painLevel >= 7 || d.inflammation) { const kit = findContent('emergency_kit_protocol'); if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`; }
+        if (d.painLevel >= 7 || d.inflammation) {
+            const kit = findContent('emergency_kit_protocol');
+            if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`;
+        }
         const callusKey = d.callusType.toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
         const mainProtocol = findContent(callusKey);
         if(mainProtocol) { fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')}</h3><div class="text-left">${mainProtocol.content_html}</div></div>`; }
         if (d.hasDeformity) { const deformityInfo = findContent('deformity_info'); if(deformityInfo) { fullHtml += `<div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">Nota sobre Deformidades</h3><div class="text-left"><p>${deformityInfo.content_html}</p></div></div>`; }}
         this.state.appConfig.products.forEach(p => { if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name); if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name); if(d.inflammation && p.category === 'inflamacao_dor') suggestedProducts.add(p.name); });
         d.suggestedProducts = Array.from(suggestedProducts);
-        return { fullHtml };
+        return { fullHtml, suggestedProducts: d.suggestedProducts };
     },
-
+    
     render() {
         this.updateProgressBar();
         const container = document.getElementById('calloscare-main-content');
@@ -169,16 +178,33 @@ const CallosCareApp = {
         if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) { if(warningBanner) warningBanner.classList.remove('hidden'); } else { if(warningBanner) warningBanner.classList.add('hidden'); }
 
         switch (this.state.currentStep) {
-            case 'loading': content = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i></div>`; break;
-            case 'error': content = `<div class="text-center p-8 text-red-500">Ocorreu um erro ao carregar. Tente recarregar a página.</div>`; break;
+            case 'loading': content = `...`; break;
+            case 'error': content = `...`; break;
             case 'identification': content = `...`; break;
             case 'home': content = `...`; break;
             case 'step0_triage': content = `...`; break;
-            case 'step1_callusType': content = `...`; break;
+            case 'step1_callusType':
+                const types = this.state.appConfig.app_content.filter(c => c.content_key.endsWith('_definition')) || [];
+                content = `
+                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 1: Qual o aspeto da lesão?</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">${types.map(t => {
+                        const typeName = t.title.replace('O que é um ','').replace('?','');
+                        return `<div class="calloscare-option-card border-2 p-3 text-center rounded-lg flex flex-col justify-between ${d.callusType===typeName?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('callusType','${typeName}')">
+                                    <img src="${t.image_url || ''}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url || ''}')">
+                                    <div>
+                                        <p class="font-semibold text-blue-600 underline cursor-pointer" onclick="CallosCareApp.showDefinition(event, '${t.content_key}')">${typeName}</p>
+                                        <p class="text-xs text-gray-500 mt-1">${t.short_desc || ''}</p>
+                                    </div>
+                                </div>`
+                    }).join('')}</div>
+                    <div class="flex justify-between mt-8">
+                        <button onclick="CallosCareApp.goToStep(CallosCareApp.state.diagnosis.is_diabetic ? 'step0_triage' : 'home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button>
+                        <button class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" onclick="CallosCareApp.goToStep('step2_location')" ${!d.callusType?'disabled':''}>Próximo</button>
+                    </div>`;
+                break;
             case 'step2_location': content = `...`; break;
             case 'step3_details': content = `...`; break;
             case 'step4_footType': content = `...`; break;
-            
             case 'step5_results':
                  const results = this.generateTreatmentHtml(d);
                  content = `
@@ -188,14 +214,11 @@ const CallosCareApp = {
                         <h4 class="font-bold text-lg text-left">Lista de Produtos Sugeridos:</h4>
                         <ul class="list-disc pl-5 mt-2 text-left">${(d.suggestedProducts&&d.suggestedProducts.length>0)?d.suggestedProducts.map(p=>`<li>${p}</li>`).join(''):'<li>Nenhum produto específico.</li>'}</ul>
                     </div>
-                    <div class="flex justify-between items-center mt-8">${d.isSaved?`<span class="text-green-600 font-bold"><i class="fas fa-check-circle mr-2"></i>Diagnóstico Guardado</span><button onclick="CallosCareApp.goToStep('home')" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">Voltar ao Menu Principal</button>`:`<button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar e Editar</button><button onclick="CallosCareApp.saveDiagnosis()" id="save-diag-spinner" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg">Guardar Diagnóstico <i class="fas fa-spinner fa-spin hidden ml-2"></i></button>`}</div>`;
+                    <div class="flex justify-between items-center mt-8">${d.isSaved?`<span class="text-green-600 font-bold"><i class="fas fa-check-circle mr-2"></i>Diagnóstico Guardado</span><button onclick="CallosCareApp.goToStep('home')" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">Voltar ao Menu</button>`:`<button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar e Editar</button><button onclick="CallosCareApp.saveDiagnosis()" id="save-diag-spinner" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg">Guardar Diagnóstico <i class="fas fa-spinner fa-spin hidden ml-2"></i></button>`}</div>`;
                 break;
-            default: content = `<p class="text-center">Ocorreu um erro de navegação.</p>`; break;
+            default: content = `<p class="text-center">Ocorreu um erro.</p>`; break;
         }
         container.innerHTML = `<div class="calloscare-step active">${content}</div>`;
-        if (this.state.currentStep === 'identification') {
-            // Placeholder for populateDateDropdowns if needed
-        }
     }
 };
 
