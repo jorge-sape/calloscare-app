@@ -1,185 +1,223 @@
-<!DOCTYPE html>
-<html lang="pt-PT">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CallosCare</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        #calloscare-app-container { font-family: 'Inter', sans-serif; }
-        .calloscare-step { display: none; }
-        .calloscare-step.active { display: block; animation: fadeIn 0.5s; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .progress-bar-fill { transition: width 0.5s ease-in-out; }
-        .calloscare-option-card { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
-        .calloscare-option-card:hover { transform: translateY(-5px); }
-        .calloscare-option-card.selected { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4); }
-        .calloscare-btn.selected { background-color: #2563eb !important; color: white !important; }
-        .calloscare-btn.selected span { color: white !important; }
-        .prose ul { list-style-type: disc; padding-left: 1.5rem; } .prose li { margin-top: 0.5rem; }
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.7); backdrop-filter: blur(5px); }
-        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
-        .zoom-modal .modal-content { background: transparent; border: none; padding: 0; max-width: 90vw; max-height: 90vh; }
-        .zoom-modal img { width: 100%; height: 100%; object-fit: contain; }
-    </style>
-</head>
-<body>
-
-<div id="calloscare-app-container" class="max-w-4xl mx-auto bg-gray-50 p-4 sm:p-6 rounded-lg shadow-lg">
-    <header class="text-center mb-6 bg-blue-600 p-4 rounded-lg shadow-md">
-        <h1 id="app-title" class="text-3xl font-bold text-white">CallosCare</h1>
-        <p class="text-md text-blue-100">Assistente de Diagnóstico e Tratamento da DOR e dos seus Calos</p>
-    </header>
-    <div id="diabetic-warning-banner" class="hidden p-3 mb-4 bg-red-100 border-l-4 border-red-500 text-red-700">
-        <p><i class="fas fa-exclamation-triangle mr-2"></i><strong>Aviso:</strong> Como diabético/com má circulação, o auto-tratamento apresenta riscos. Use esta ferramenta como guia educativo e consulte sempre um profissional.</p>
-    </div>
-    <div id="progress-bar-container" class="w-full bg-gray-200 rounded-full h-2.5 mb-8 hidden">
-        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full progress-bar-fill" style="width: 0%"></div>
-    </div>
-    <main id="calloscare-main-content"></main>
-</div>
-
-<div id="image-zoom-modal" class="modal zoom-modal" onclick="CallosCareApp.closeModal()">
-    <div class="modal-content"><img id="zoomed-image" src="" alt="Imagem Ampliada"></div>
-</div>
-<div id="definition-modal" class="modal">
-    <div class="modal-content">
-        <span onclick="CallosCareApp.closeModal()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
-        <h2 id="definition-title" class="text-2xl font-bold mb-4"></h2>
-        <div id="definition-text" class="text-gray-700 prose"></div>
-    </div>
-</div>
-
-<script>
-// CallosCare App v4.6
+// CallosCare App v4.7 - Ecrã de Resultados Completo
 const CallosCareApp = {
-    API_BASE_URL: '/api',
-    VERSION: 'v4.6',
-    state: { user: null, appConfig: null, currentStep: 'loading', diagnosis: {} },
+    // ... (mantenha todo o código anterior igual até a função generateTreatmentHtml)
 
-    async init() {
-        this.render(); this.loadUserFromLocalStorage();
-        try { this.state.appConfig = await this.api.getAppConfig(); this.state.currentStep = this.state.user ? 'home' : 'identification';
-        } catch (error) { console.error("Initialization Error:", error); this.state.currentStep = 'error'; }
-        this.render();
-    },
-
-    loadUserFromLocalStorage() { try { const u = localStorage.getItem('calloscareUser'); if(u) this.state.user = JSON.parse(u); } catch(e){} },
-    saveUserToLocalStorage() { localStorage.setItem('calloscareUser', JSON.stringify(this.state.user)); },
-
-    api: {
-        async getAppConfig() { const r = await fetch(`${CallosCareApp.API_BASE_URL}/getAppConfig`); if (!r.ok) throw new Error('Network response was not ok'); return r.json(); },
-        async saveClientData(d) { const r = await fetch(`${CallosCareApp.API_BASE_URL}/saveClient`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if (!r.ok) throw new Error('Failed to save client data'); return r.json(); },
-        async saveDiagnosticData(d) { const r = await fetch(`${CallosCareApp.API_BASE_URL}/saveDiagnostic`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if (!r.ok) throw new Error('Failed to save diagnostic data'); return r.json(); },
-    },
-
-    async saveUser() {
-        const fn=document.getElementById('user-first-name').value.trim(),ln=document.getElementById('user-last-name').value.trim(),e=document.getElementById('user-email')?.value.trim();
-        if(!fn || !ln || !e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){ alert('Por favor, preencha todos os campos com um email válido.'); return; }
-        const ud = {firstName: fn, lastName: ln, email: e};
-        this.showSpinner('save-client-spinner');
-        try { const res = await this.api.saveClientData(ud); this.state.user = { ...res.data[0] }; this.saveUserToLocalStorage(); this.goToStep('home');
-        } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
-    },
-    
-    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[]}; this.goToStep('step0_triage'); },
-    goToStep(step) { this.state.currentStep = step; window.scrollTo(0,0); this.render(); },
-    
-    selectCallusType(contentKey) {
-        const type = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
-        if (type) {
-            this.state.diagnosis.callusType = type.title.replace('O que é um ','').replace('?','');
-            this.render();
-            const nextButton = document.querySelector('.step-next-btn');
-            if(nextButton) nextButton.disabled = false;
-            setTimeout(() => nextButton?.focus(), 100);
-        }
-    },
-    
-    selectOption(key, value, nextFocusId = null) {
-        this.state.diagnosis[key] = value;
-        this.render();
-        if (nextFocusId) { setTimeout(() => { const el = document.getElementById(nextFocusId); if(el) el.focus({ preventScroll: true }); }, 100); } 
-        else { setTimeout(() => document.querySelector('.step-next-btn')?.focus(), 100); }
-    },
-
-    toggleMultiOption(key,value){
-        let a=this.state.diagnosis[key]||[];
-        const i=a.indexOf(value);
-        if(i>-1){a.splice(i,1);}else{a.push(value);}
-        this.state.diagnosis[key] = a;
-        this.render();
-    },
-    
-    generateAndGoToResults() {
-        const d = this.state.diagnosis;
-        const results = this.generateTreatmentHtml(d);
-        d.treatment_html = results.fullHtml;
-        d.suggestedProducts = results.suggestedProducts;
-        this.goToStep('step5_results');
-    },
-
-    async saveDiagnosis() {
-        this.showSpinner('save-diag-spinner');
-        const d = this.state.diagnosis;
-        const payload = { client_id: this.state.user.id, callus_type_name: d.callusType, pain_level: d.painLevel, inflammation: d.inflammation, locations: d.locations, foot_type: d.footType, has_deformity: d.hasDeformity, is_diabetic: d.is_diabetic, treatment_protocol_html: d.treatment_html, suggested_products_snapshot: JSON.stringify(d.suggestedProducts) };
-        try {
-            await this.api.saveDiagnosticData(payload);
-            d.isSaved = true;
-            this.render();
-        } catch (error) { alert(`Erro ao guardar: ${error.message}`);
-        } finally { this.hideSpinner('save-diag-spinner'); }
-    },
-
-    showSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.remove('hidden'); const btn=el.parentElement; if(btn) btn.setAttribute('disabled', 'true'); } },
-    hideSpinner(id) { const el=document.getElementById(id); if(el) { el.classList.add('hidden'); const btn=el.parentElement; if(btn) btn.removeAttribute('disabled'); } },
-    showImageZoom(event, imageUrl) { event.stopPropagation(); document.getElementById('zoomed-image').src = imageUrl; document.getElementById('image-zoom-modal').style.display = 'flex'; },
-    showDefinition(event, contentKey) {
-        event.stopPropagation();
-        const item = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
-        if(item) {
-            document.getElementById('definition-title').innerText = item.title;
-            document.getElementById('definition-text').innerHTML = item.content_html;
-            document.getElementById('definition-modal').style.display = 'block';
-        }
-    },
-    closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; },
-
-    updateProgressBar() {
-        const pbc=document.getElementById('progress-bar-container'),pb=document.getElementById('progress-bar');if(!pbc||!pb)return;
-        const sm={'step0_triage':5,'step1_callusType':15,'step2_location':30,'step3_details':45,'step4_footType':60,'step5_results':75};
-        const p=sm[this.state.currentStep]||0;
-        if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
-    },
-    
     generateTreatmentHtml(d) {
         let fullHtml = '';
         let suggestedProducts = new Set();
         const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
+        const findProduct = (name) => this.state.appConfig.products.find(p => p.name === name);
 
+        // 1. RESUMO DA AVALIAÇÃO
+        fullHtml += `
+            <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+                <h3 class="text-xl font-bold text-center mb-4 text-blue-800">📋 Resumo da Sua Avaliação</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="space-y-2">
+                        <p><strong>Tipo de Lesão:</strong> ${d.callusType || 'Não especificado'}</p>
+                        <p><strong>Localização:</strong> ${(d.locations || []).map(loc => {
+                            const locNames = {
+                                'dedo_grande': 'Dedo Grande', 'dedo_pequeno': 'Dedo Pequeno', 
+                                'entre_dedos': 'Entre os Dedos', 'em_cima_dedos': 'Em Cima dos Dedos',
+                                'bola_pe': 'Bola do Pé', 'calcanhar': 'Calcanhar', 'lateral': 'Lateral do Pé'
+                            };
+                            return locNames[loc] || loc;
+                        }).join(', ') || 'Não especificada'}</p>
+                        <p><strong>Nível de Dor:</strong> ${d.painLevel || 0}/10</p>
+                    </div>
+                    <div class="space-y-2">
+                        <p><strong>Inflamação:</strong> ${d.inflammation ? 'Sim' : 'Não'}</p>
+                        <p><strong>Tipo de Pé:</strong> ${d.footType === 'seco' ? 'Pés Secos' : d.footType === 'humido' ? 'Pés Húmidos' : d.footType === 'normal' ? 'Pés Normais' : 'Não especificado'}</p>
+                        <p><strong>Deformidade:</strong> ${d.hasDeformity ? 'Sim' : 'Não'}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 2. PROTOCOLO DE EMERGÊNCIA (se aplicável)
         if (d.painLevel >= 7 || d.inflammation) {
             const kit = findContent('emergency_kit_protocol');
-            if(kit) fullHtml += `<div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none"><h3 class="text-red-700 font-bold text-center text-lg"><i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}</h3><div class="text-left">${kit.content_html}</div></div>`;
+            if(kit) {
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="text-red-700 font-bold text-center text-lg mb-3">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>${kit.title}
+                        </h3>
+                        <div class="text-left">${this.makeProductsInteractive(kit.content_html)}</div>
+                    </div>
+                `;
+                // Adicionar produtos de emergência
+                this.state.appConfig.products.forEach(p => {
+                    if(p.category === 'inflamacao_dor') suggestedProducts.add(p.name);
+                });
+            }
         }
         
-        let callusKey = (d.callusType || '').toLowerCase().replace(/ \/ /g, '_').replace(/ /g, '_').replace(/[()]/g, '') + '_protocol';
+        // 3. PROTOCOLO PRINCIPAL PARA O TIPO DE CALO
+        let callusKey = (d.callusType || '').toLowerCase()
+            .replace(/ \/ /g, '_')
+            .replace(/ /g, '_')
+            .replace(/[()]/g, '') + '_protocol';
+        
         // Handle specific case for verruga
         if (d.callusType === "Olho-de-peixe") {
             callusKey = 'verruga_protocol';
         }
 
         const mainProtocol = findContent(callusKey);
-        if(mainProtocol) { fullHtml += `<div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">${mainProtocol.title.replace('Geral para ', '')}</h3><div class="text-left">${mainProtocol.content_html}</div></div>`; }
-        
-        if (d.hasDeformity) { const deformityInfo = findContent('deformity_info'); if(deformityInfo) { fullHtml += `<div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none"><h3 class="font-bold text-center text-lg">Nota sobre Deformidades</h3><div class="text-left"><p>${deformityInfo.content_html}</p></div></div>`; }}
-        
-        this.state.appConfig.products.forEach(p => { if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name); if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name); if(d.inflammation && p.category === 'inflamacao_dor') suggestedProducts.add(p.name); });
+        if(mainProtocol) {
+            fullHtml += `
+                <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
+                    <h3 class="font-bold text-center text-lg mb-3">Protocolo para ${d.callusType}</h3>
+                    <div class="text-left">${this.makeProductsInteractive(mainProtocol.content_html)}</div>
+                </div>
+            `;
+        }
+
+        // 4. RECOMENDAÇÕES ADICIONAIS BASEADAS NAS RESPOSTAS
+        if (d.hasDeformity) {
+            const deformityInfo = findContent('deformity_info');
+            if(deformityInfo) {
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
+                        <div class="text-left">${this.makeProductsInteractive(deformityInfo.content_html)}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // 5. PRODUTOS SUGERIDOS BASEADOS NO TIPO DE PÉ E SINTOMAS
+        this.state.appConfig.products.forEach(p => {
+            if(d.footType === 'seco' && p.category === 'hidratacao') suggestedProducts.add(p.name);
+            if(d.footType === 'humido' && p.category === 'controlo_humidade') suggestedProducts.add(p.name);
+            if(d.inflammation && p.category === 'inflamacao_dor') suggestedProducts.add(p.name);
+            // Produtos específicos para o tipo de calo
+            if(d.callusType && p.indications && p.indications.includes(d.callusType.toLowerCase())) {
+                suggestedProducts.add(p.name);
+            }
+        });
+
         d.suggestedProducts = Array.from(suggestedProducts);
+        d.interactiveSelections = d.interactiveSelections || {};
         
         return { fullHtml, suggestedProducts: d.suggestedProducts };
     },
 
+    makeProductsInteractive(html) {
+        // Esta função transforma menções a produtos em elementos clicáveis
+        // Para v4.7, vamos implementar uma versão básica
+        const productNames = this.state.appConfig.products.map(p => p.name);
+        
+        let interactiveHtml = html;
+        productNames.forEach(productName => {
+            const regex = new RegExp(`\\b${productName}\\b`, 'gi');
+            interactiveHtml = interactiveHtml.replace(regex, 
+                `<span class="text-blue-600 underline cursor-pointer font-medium" 
+                      onclick="CallosCareApp.showProductSelection('${productName}')">${productName}</span>`
+            );
+        });
+        
+        return interactiveHtml;
+    },
+
+    showProductSelection(productName) {
+        const product = this.state.appConfig.products.find(p => p.name === productName);
+        if (!product) return;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <span onclick="this.parentElement.parentElement.remove()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
+                <h3 class="text-xl font-bold mb-4">${product.name}</h3>
+                <div class="prose max-w-none mb-4">
+                    <p><strong>Categoria:</strong> ${product.category}</p>
+                    <p><strong>Descrição:</strong> ${product.description || 'Sem descrição disponível'}</p>
+                    ${product.benefits ? `<p><strong>Benefícios:</strong> ${product.benefits}</p>` : ''}
+                </div>
+                <div class="flex justify-between items-center">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="product-select-${product.id}" 
+                               ${this.state.diagnosis.interactiveSelections?.[product.name] ? 'checked' : ''}
+                               onchange="CallosCareApp.toggleProductSelection('${product.name}', this.checked)"
+                               class="mr-2 h-5 w-5 text-blue-600">
+                        <span>Adicionar à minha lista</span>
+                    </label>
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                            class="bg-blue-600 text-white px-4 py-2 rounded-lg">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+    },
+
+    toggleProductSelection(productName, isSelected) {
+        if (!this.state.diagnosis.interactiveSelections) {
+            this.state.diagnosis.interactiveSelections = {};
+        }
+        
+        if (isSelected) {
+            this.state.diagnosis.interactiveSelections[productName] = true;
+            // Adicionar à lista de produtos sugeridos se não estiver já
+            if (!this.state.diagnosis.suggestedProducts.includes(productName)) {
+                this.state.diagnosis.suggestedProducts.push(productName);
+            }
+        } else {
+            delete this.state.diagnosis.interactiveSelections[productName];
+            // Remover da lista de produtos sugeridos
+            const index = this.state.diagnosis.suggestedProducts.indexOf(productName);
+            if (index > -1) {
+                this.state.diagnosis.suggestedProducts.splice(index, 1);
+            }
+        }
+        
+        // Atualizar a renderização para refletir as mudanças
+        this.render();
+    },
+
+    showFullProductCatalog() {
+        const products = this.state.appConfig.products;
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px;">
+                <span onclick="this.parentElement.parentElement.remove()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
+                <h3 class="text-2xl font-bold mb-6 text-center">Catálogo Completo de Produtos</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                    ${products.map(product => `
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-bold text-lg mb-2">${product.name}</h4>
+                            <p class="text-sm text-gray-600 mb-2"><strong>Categoria:</strong> ${product.category}</p>
+                            <p class="text-sm mb-3">${product.description || 'Sem descrição disponível'}</p>
+                            <label class="flex items-center text-sm">
+                                <input type="checkbox" 
+                                       ${this.state.diagnosis.interactiveSelections?.[product.name] ? 'checked' : ''}
+                                       onchange="CallosCareApp.toggleProductSelection('${product.name}', this.checked)"
+                                       class="mr-2 h-4 w-4 text-blue-600">
+                                Selecionar
+                            </label>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="text-center mt-6">
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                            class="bg-blue-600 text-white px-6 py-2 rounded-lg">
+                        Fechar Catálogo
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+    },
+
+    // ATUALIZAÇÃO DO RENDER() PARA STEP5_RESULTS
     render() {
         this.updateProgressBar();
         const container = document.getElementById('calloscare-main-content');
@@ -188,106 +226,98 @@ const CallosCareApp = {
         document.getElementById('app-title').innerHTML = `CallosCare <span class="text-sm font-light opacity-75">${this.VERSION}</span>`;
         
         const warningBanner = document.getElementById('diabetic-warning-banner');
-        if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) { if(warningBanner) warningBanner.classList.remove('hidden'); } else { if(warningBanner) warningBanner.classList.add('hidden'); }
+        if (d && d.is_diabetic && this.state.currentStep.startsWith('step')) { 
+            if(warningBanner) warningBanner.classList.remove('hidden'); 
+        } else { 
+            if(warningBanner) warningBanner.classList.add('hidden'); 
+        }
 
         switch (this.state.currentStep) {
-            case 'loading': content = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i></div>`; break;
-            case 'error': content = `<div class="text-center p-8 text-red-500">Ocorreu um erro ao carregar. Tente recarregar a página.</div>`; break;
-            case 'identification':
+            // ... (mantenha todos os cases anteriores iguais)
+            
+            case 'step5_results':
+                const results = this.generateTreatmentHtml(d);
+                const selectedProducts = d.interactiveSelections ? Object.keys(d.interactiveSelections) : [];
+                
                 content = `
-                    <div class="max-w-lg mx-auto">
-                        <h2 class="text-2xl font-semibold text-center mb-4">Identificação do Paciente</h2>
-                        <p class="text-center text-gray-600 mb-6">Para guardar o seu progresso, preencha os seus dados.</p>
-                        <div class="space-y-4">
-                            <div><label for="user-first-name" class="block text-sm font-medium text-gray-700">Primeiro Nome*</label><input type="text" id="user-first-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                            <div><label for="user-last-name" class="block text-sm font-medium text-gray-700">Último Nome*</label><input type="text" id="user-last-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                            <div><label for="user-email" class="block text-sm font-medium text-gray-700">Email*</label><input type="email" id="user-email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"></div>
-                        </div>
-                        <div class="flex justify-end mt-6">
-                            <button onclick="CallosCareApp.saveUser()" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700">
-                                Guardar e Entrar <i id="save-client-spinner" class="fas fa-spinner fa-spin hidden ml-2"></i>
+                    <h2 class="text-2xl font-semibold text-center mb-6">Plano de Tratamento Individualizado</h2>
+                    
+                    <div id="treatment-results-content" class="space-y-6">
+                        ${results.fullHtml}
+                    </div>
+                    
+                    <!-- LISTA DE PRODUTOS SUGERIDOS -->
+                    <div class="mt-8 p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-lg text-gray-800">🛍️ Lista de Produtos Sugeridos</h4>
+                            <button onclick="CallosCareApp.showFullProductCatalog()" 
+                                    class="text-blue-600 text-sm underline hover:text-blue-800">
+                                (veja toda a lista de produtos)
                             </button>
                         </div>
-                    </div>`;
-                break;
-            case 'home':
-                content = `
-                    <div class="max-w-md mx-auto text-center">
-                        <h2 class="text-2xl font-semibold mb-2">Bem-vindo(a), ${this.state.user.firstName}!</h2>
-                        <div class="space-y-4 mt-8">
-                            <button onclick="CallosCareApp.startDiagnosis()" class="w-full bg-blue-600 text-white font-bold py-4 px-6 rounded-lg text-lg"><i class="fas fa-plus-circle mr-3"></i> Iniciar Novo Diagnóstico</button>
-                            <button onclick="alert('Histórico será implementado a seguir.')" class="w-full bg-gray-600 text-white font-bold py-4 px-6 rounded-lg text-lg"><i class="fas fa-history mr-3"></i> Aceder ao Histórico</button>
-                        </div>
-                    </div>`;
-                break;
-            case 'step0_triage':
-                const warning = this.state.appConfig.app_content.find(c => c.content_key === 'diabetes_warning_page');
-                content = `
-                    <div>
-                        <h2 class="text-2xl font-semibold text-center mb-6">Pergunta Importante de Segurança</h2>
-                        <div class="max-w-lg mx-auto space-y-4">
-                            <label class="block text-lg font-bold text-gray-700">É diabético ou tem neuropatia/má circulação sanguínea?</label>
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <button class="calloscare-btn p-4 rounded-lg border-2 border-red-500 text-red-700 hover:bg-red-50" onclick="CallosCareApp.state.diagnosis.is_diabetic=true; CallosCareApp.render();">Sim</button>
-                                <button class="calloscare-btn p-4 rounded-lg border-2 border-green-500 text-green-700 hover:bg-green-50" onclick="CallosCareApp.state.diagnosis.is_diabetic=false; CallosCareApp.goToStep('step1_callusType');">Não</button>
+                        
+                        <!-- Produtos Selecionados pelo Utilizador -->
+                        ${selectedProducts.length > 0 ? `
+                            <div class="mb-4">
+                                <p class="text-sm text-gray-600 mb-2">✅ <strong>Os seus produtos selecionados:</strong></p>
+                                <ul class="list-disc pl-5 space-y-1">
+                                    ${selectedProducts.map(p => `<li class="text-green-600 font-medium">${p}</li>`).join('')}
+                                </ul>
                             </div>
-                            ${d.is_diabetic === true && warning ? `<div class="mt-6">${warning.content_html}</div><div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar ao Menu</button><button onclick="CallosCareApp.goToStep('step1_callusType')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Compreendo, desejo continuar</button></div>` : ''}
+                        ` : ''}
+                        
+                        <!-- Produtos Sugeridos pelo Sistema -->
+                        <div>
+                            <p class="text-sm text-gray-600 mb-2"><strong>Sugestões baseadas na sua avaliação:</strong></p>
+                            <ul class="list-disc pl-5 space-y-1 text-left">
+                                ${(d.suggestedProducts && d.suggestedProducts.length > 0) ? 
+                                    d.suggestedProducts.map(p => `
+                                        <li class="${selectedProducts.includes(p) ? 'text-green-600 font-medium' : ''}">
+                                            ${p}
+                                            ${!selectedProducts.includes(p) ? `
+                                                <button onclick="CallosCareApp.toggleProductSelection('${p}', true)" 
+                                                        class="ml-2 text-blue-600 text-xs underline">
+                                                    adicionar
+                                                </button>
+                                            ` : `
+                                                <button onclick="CallosCareApp.toggleProductSelection('${p}', false)" 
+                                                        class="ml-2 text-red-600 text-xs underline">
+                                                    remover
+                                                </button>
+                                            `}
+                                        </li>
+                                    `).join('') : 
+                                    '<li class="text-gray-500">Nenhum produto específico sugerido.</li>'
+                                }
+                            </ul>
                         </div>
-                    </div>`;
-                break;
-            case 'step1_callusType':
-                const types = this.state.appConfig.app_content.filter(c => c.content_key.endsWith('_definition')) || [];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 1: Qual o aspeto da lesão?</h2>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">${types.map(t => {
-                        const typeName = t.title.replace('O que é um ','').replace('?','');
-                        return `<div class="calloscare-option-card border-2 p-3 text-center rounded-lg flex flex-col justify-between ${d.callusType===typeName?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('callusType','${typeName}')">
-                                    <img src="${t.image_url || ''}" class="w-full h-32 object-cover rounded-md mb-2 bg-gray-200" onclick="CallosCareApp.showImageZoom(event, '${t.image_url || ''}')">
-                                    <div><p class="font-semibold text-blue-600 underline cursor-pointer" onclick="CallosCareApp.showDefinition(event, '${t.content_key}')">${typeName}</p><p class="text-xs text-gray-500 mt-1">${t.short_desc || ''}</p></div>
-                                </div>`
-                    }).join('')}</div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep(CallosCareApp.state.diagnosis.is_diabetic ? 'step0_triage' : 'home')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" onclick="CallosCareApp.goToStep('step2_location')" ${!d.callusType?'disabled':''}>Próximo</button></div>`;
-                break;
-            case 'step2_location':
-                const locations = [ {id:"dedo_grande",text:"1. Dedo Grande"},{id:"dedo_pequeno",text:"2. Dedo Pequeno"},{id:"entre_dedos",text:"3. Entre os Dedos"},{id:"em_cima_dedos",text:"4. Em Cima dos Dedos"},{id:"bola_pe",text:"5. Bola do Pé"},{id:"calcanhar",text:"6. Calcanhar"},{id:"lateral",text:"7. Lateral do Pé"}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 2: Onde se localiza a dor?</h2>
-                    <p class="text-center text-gray-600 mb-4">Selecione uma ou mais zonas.</p>
-                    <div class="flex flex-col md:flex-row gap-8 items-start mt-6"><div class="w-full md:w-5/12"><img src="https://calos.webbizs.com/web/image/10582-43516c77/p%C3%A9%20desenho.webp" alt="Diagrama do Pé" class="w-full max-w-xs mx-auto"></div><div class="w-full md:w-7/12 grid grid-cols-1 gap-2">${locations.map(loc => `<button class="calloscare-btn w-full text-left border border-gray-300 p-3 rounded-lg ${(d.locations||[]).includes(loc.id)?'selected':''}" onclick="CallosCareApp.toggleMultiOption('locations','${loc.id}')">${loc.text}</button>`).join('')}</div></div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step1_callusType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.goToStep('step3_details')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.locations||d.locations.length===0?'disabled':''}>Próximo</button></div>`;
-                break;
-            case 'step3_details':
-                const changes = [{id:'aumento_peso', text:'Aumento de peso'}, {id:'inchaço', text:'Inchaço (Edema) nos pés'}, {id:'nenhum', text:'Nenhuma das anteriores'}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 3: Detalhes dos Sintomas</h2>
-                    <div class="max-w-lg mx-auto space-y-8">
-                        <div><label class="block text-lg font-bold text-gray-700">Classifique o seu Nível de Dor</label><input type="range" id="pain-level-slider" min="0" max="10" value="${d.painLevel||0}" class="w-full h-3 mt-2" oninput="document.getElementById('pain-level-display').textContent=this.value" onchange="CallosCareApp.selectOption('painLevel',this.value,'inflammation-yes-btn')"><div class="flex justify-between text-sm text-gray-500 mt-1 px-1"><span>0</span><span>10</span></div><p class="text-center text-3xl font-bold mt-2" id="pain-level-display">${d.painLevel||0}</p></div>
-                        <div><label class="block text-lg font-bold text-gray-700">A zona está inflamada (vermelha, quente)?</label><div class="mt-2 grid grid-cols-2 gap-4"><button id="inflammation-yes-btn" class="calloscare-btn p-4 rounded-lg border ${d.inflammation===true?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('inflammation',true,'#physical-changes-group button')">Sim</button><button class="calloscare-btn p-4 rounded-lg border ${d.inflammation===false?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('inflammation',false,'#physical-changes-group button')">Não</button></div></div>
-                        <div id="physical-changes-group"><label class="block text-lg font-bold text-gray-700 mb-2">Notou alguma alteração física recente?</label><div class="space-y-2">${changes.map(c=>`<button class="physicalChanges-btn calloscare-btn w-full text-left border p-3 rounded-lg ${(d.physicalChanges||[]).includes(c.id)?'selected':''}" data-value="${c.id}" onclick="this.classList.toggle('selected');CallosCareApp.toggleMultiOption('physicalChanges','${c.id}',${c.id==='nenhum'})">${c.text}</button>`).join('')}</div></div>
                     </div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step2_location')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${d.painLevel===undefined||d.inflammation===undefined||!d.physicalChanges||d.physicalChanges.length===0?'disabled':''}>Próximo</button></div>`;
-                break;
-            case 'step4_footType':
-                const footTypes = [{id:"seco",title:"Pés Secos",desc:"A pele parece repuxada..."},{id:"humido",title:"Pés Húmidos / Suados",desc:"Os pés transpiram com frequência."},{id:"normal",title:"Pés Normais",desc:"A pele é macia..."}];
-                content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Passo 4: Análise Final</h2>
-                    <div class="max-w-lg mx-auto space-y-8">
-                        <div><label class="block text-lg font-bold text-gray-700">Qual o seu tipo de pés?</label><div class="mt-2 space-y-3">${footTypes.map(ft => `<button class="calloscare-btn w-full text-left border p-4 rounded-lg ${d.footType===ft.id?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('footType','${ft.id}','deformity-yes-btn')"><strong class="block">${ft.title}</strong><span class="text-sm text-gray-500">${ft.desc}</span></button>`).join('')}</div></div>
-                        <div><label class="block text-lg font-bold text-gray-700">Tem alguma deformidade visível no pé?</label><p class="text-sm text-gray-500 mb-2">(ex: dedos curvados, joanete, etc.)</p><div class="mt-2 grid grid-cols-2 gap-4"><button id="deformity-yes-btn" class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===true?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',true)">Sim</button><button class="calloscare-btn p-4 rounded-lg border ${d.hasDeformity===false?'selected':''}" onclick="this.parentElement.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));this.classList.add('selected');CallosCareApp.selectOption('hasDeformity',false)">Não</button></div></div>
+                    
+                    <!-- BOTÕES DE AÇÃO -->
+                    <div class="flex justify-between items-center mt-8">
+                        ${d.isSaved ? `
+                            <span class="text-green-600 font-bold flex items-center">
+                                <i class="fas fa-check-circle mr-2"></i>Diagnóstico Guardado ✓
+                            </span>
+                            <button onclick="CallosCareApp.goToStep('home')" 
+                                    class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors">
+                                Voltar ao Menu Principal
+                            </button>
+                        ` : `
+                            <button onclick="CallosCareApp.goToStep('step4_footType')" 
+                                    class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                                ← Voltar e Editar
+                            </button>
+                            <button onclick="CallosCareApp.saveDiagnosis()" 
+                                    class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors flex items-center">
+                                Guardar Diagnóstico 
+                                <i id="save-diag-spinner" class="fas fa-spinner fa-spin hidden ml-2"></i>
+                            </button>
+                        `}
                     </div>
-                    <div class="flex justify-between mt-8"><button onclick="CallosCareApp.goToStep('step3_details')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button><button onclick="CallosCareApp.generateAndGoToResults()" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg step-next-btn" ${!d.footType||d.hasDeformity===undefined?'disabled':''}>Ver Tratamento Sugerido</button></div>`;
+                `;
                 break;
-            case 'step5_results':
-                 const results = this.generateTreatmentHtml(d);
-                 content = `
-                    <h2 class="text-2xl font-semibold text-center mb-6">Plano de Tratamento Individualizado</h2>
-                    <div id="treatment-results-content" class="space-y-4">${results.fullHtml}</div>
-                    <div class="mt-6 p-4 bg-gray-100 rounded-lg">
-                        <h4 class="font-bold text-lg text-left">Lista de Produtos Sugeridos:</h4>
-                        <ul class="list-disc pl-5 mt-2 text-left">${(d.suggestedProducts&&d.suggestedProducts.length>0)?d.suggestedProducts.map(p=>`<li>${p}</li>`).join(''):'<li>Nenhum produto específico.</li>'}</ul>
-                    </div>
-                    <div class="flex justify-between items-center mt-8">${d.isSaved?`<span class="text-green-600 font-bold"><i class="fas fa-check-circle mr-2"></i>Diagnóstico Guardado</span><button onclick="CallosCareApp.goToStep('home')" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg">Voltar ao Menu Principal</button>`:`<button onclick="CallosCareApp.goToStep('step4_footType')" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar e Editar</button><button onclick="CallosCareApp.saveDiagnosis()" id="save-diag-spinner" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg">Guardar Diagnóstico <i class="fas fa-spinner fa-spin hidden ml-2"></i></button>`}</div>`;
-                break;
+                
             default:
                 content = `<p class="text-center">Ocorreu um erro de navegação. <a href="#" onclick="CallosCareApp.goToStep('home')" class="text-blue-600">Voltar ao início.</a></p>`;
                 break;
@@ -296,7 +326,5 @@ const CallosCareApp = {
     }
 };
 
+// Inicialização
 document.addEventListener('DOMContentLoaded', () => CallosCareApp.init());
-</script>
-</body>
-</html>
