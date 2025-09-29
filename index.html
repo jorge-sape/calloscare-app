@@ -1,5 +1,3 @@
-deepseek V4.7
-
 <!DOCTYPE html>
 <html lang="pt-PT">
 <head>
@@ -24,6 +22,7 @@ deepseek V4.7
         .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
         .zoom-modal .modal-content { background: transparent; border: none; padding: 0; max-width: 90vw; max-height: 90vh; }
         .zoom-modal img { width: 100%; height: 100%; object-fit: contain; }
+        .product-selected { color: #059669 !important; font-weight: 600 !important; }
     </style>
 </head>
 <body>
@@ -54,7 +53,7 @@ deepseek V4.7
 </div>
 
 <script>
-// CallosCare App v4.7 - COMPLETA
+// CallosCare App v4.7 - IMPLEMENTAÇÃO COMPLETA DO ECRÃ DE RESULTADOS
 const CallosCareApp = {
     API_BASE_URL: '/api',
     VERSION: 'v4.7',
@@ -85,7 +84,7 @@ const CallosCareApp = {
         } catch (err) { alert(`Erro: ${err.message}`); } finally { this.hideSpinner('save-client-spinner'); }
     },
     
-    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[]}; this.goToStep('step0_triage'); },
+    startDiagnosis() { this.state.diagnosis = {locations:[],physicalChanges:[], selectedProducts: {}}; this.goToStep('step0_triage'); },
     goToStep(step) { this.state.currentStep = step; window.scrollTo(0,0); this.render(); },
     
     selectCallusType(contentKey) {
@@ -125,7 +124,19 @@ const CallosCareApp = {
     async saveDiagnosis() {
         this.showSpinner('save-diag-spinner');
         const d = this.state.diagnosis;
-        const payload = { client_id: this.state.user.id, callus_type_name: d.callusType, pain_level: d.painLevel, inflammation: d.inflammation, locations: d.locations, foot_type: d.footType, has_deformity: d.hasDeformity, is_diabetic: d.is_diabetic, treatment_protocol_html: d.treatment_html, suggested_products_snapshot: JSON.stringify(d.suggestedProducts) };
+        const payload = { 
+            client_id: this.state.user.id, 
+            callus_type_name: d.callusType, 
+            pain_level: d.painLevel, 
+            inflammation: d.inflammation, 
+            locations: d.locations, 
+            foot_type: d.footType, 
+            has_deformity: d.hasDeformity, 
+            is_diabetic: d.is_diabetic, 
+            treatment_protocol_html: d.treatment_html, 
+            suggested_products_snapshot: JSON.stringify(d.suggestedProducts),
+            selected_products: JSON.stringify(d.selectedProducts || {})
+        };
         try {
             await this.api.saveDiagnosticData(payload);
             d.isSaved = true;
@@ -146,7 +157,16 @@ const CallosCareApp = {
             document.getElementById('definition-modal').style.display = 'block';
         }
     },
-    closeModal() { document.getElementById('image-zoom-modal').style.display = 'none'; document.getElementById('definition-modal').style.display = 'none'; },
+    closeModal() { 
+        document.getElementById('image-zoom-modal').style.display = 'none'; 
+        document.getElementById('definition-modal').style.display = 'none'; 
+        // Fechar também modais de produtos
+        document.querySelectorAll('.modal').forEach(modal => {
+            if(modal.id !== 'image-zoom-modal' && modal.id !== 'definition-modal') {
+                modal.remove();
+            }
+        });
+    },
 
     updateProgressBar() {
         const pbc=document.getElementById('progress-bar-container'),pb=document.getElementById('progress-bar');if(!pbc||!pb)return;
@@ -155,242 +175,280 @@ const CallosCareApp = {
         if(p>0){pbc.classList.remove('hidden');pb.style.width=`${p}%`;}else{pbc.classList.add('hidden');}
     },
 
-    // FUNÇÃO CORRIGIDA - substitua apenas esta função no seu código
-generateTreatmentHtml(d) {
-    let fullHtml = '';
-    let suggestedProducts = new Set();
-    const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
+    // FUNÇÃO PRINCIPAL CORRIGIDA - SEGUINDO A LÓGICA DO DOCUMENTO
+    generateTreatmentHtml(d) {
+        let fullHtml = '';
+        let suggestedProducts = new Set();
+        const findContent = (key) => this.state.appConfig.app_content.find(c => c.content_key === key);
 
-    console.log("Conteúdos disponíveis:", this.state.appConfig.app_content.map(c => c.content_key));
-    console.log("Diagnóstico:", d);
-
-    // 1. RESUMO DA AVALIAÇÃO
-    fullHtml += `
-        <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
-            <h3 class="text-xl font-bold text-center mb-4 text-blue-800">📋 Resumo da Sua Avaliação</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div class="space-y-2">
-                    <p><strong>Tipo de Lesão:</strong> ${d.callusType || 'Não especificado'}</p>
-                    <p><strong>Localização:</strong> ${(d.locations || []).map(loc => {
-                        const locNames = {
-                            'dedo_grande': 'Dedo Grande', 'dedo_pequeno': 'Dedo Pequeno', 
-                            'entre_dedos': 'Entre os Dedos', 'em_cima_dedos': 'Em Cima dos Dedos',
-                            'bola_pe': 'Bola do Pé', 'calcanhar': 'Calcanhar', 'lateral': 'Lateral do Pé'
-                        };
-                        return locNames[loc] || loc;
-                    }).join(', ') || 'Não especificada'}</p>
-                    <p><strong>Nível de Dor:</strong> ${d.painLevel || 0}/10</p>
-                </div>
-                <div class="space-y-2">
-                    <p><strong>Inflamação:</strong> ${d.inflammation ? 'Sim' : 'Não'}</p>
-                    <p><strong>Tipo de Pé:</strong> ${d.footType === 'seco' ? 'Pés Secos' : d.footType === 'humido' ? 'Pés Húmidos' : d.footType === 'normal' ? 'Pés Normais' : 'Não especificado'}</p>
-                    <p><strong>Deformidade:</strong> ${d.hasDeformity ? 'Sim' : 'Não'}</p>
+        // 1. RESUMO DA AVALIAÇÃO (SEMPRE VISÍVEL)
+        fullHtml += `
+            <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+                <h3 class="text-xl font-bold text-center mb-4 text-blue-800">📋 Resumo da Sua Avaliação</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="space-y-2">
+                        <p><strong>Tipo de Lesão:</strong> ${d.callusType || 'Não especificado'}</p>
+                        <p><strong>Localização:</strong> ${(d.locations || []).map(loc => {
+                            const locNames = {
+                                'dedo_grande': 'Dedo Grande', 'dedo_pequeno': 'Dedo Pequeno', 
+                                'entre_dedos': 'Entre os Dedos', 'em_cima_dedos': 'Em Cima dos Dedos',
+                                'bola_pe': 'Bola do Pé', 'calcanhar': 'Calcanhar', 'lateral': 'Lateral do Pé'
+                            };
+                            return locNames[loc] || loc;
+                        }).join(', ') || 'Não especificada'}</p>
+                        <p><strong>Nível de Dor:</strong> ${d.painLevel || 0}/10</p>
+                    </div>
+                    <div class="space-y-2">
+                        <p><strong>Inflamação:</strong> ${d.inflammation ? 'Sim' : 'Não'}</p>
+                        <p><strong>Tipo de Pé:</strong> ${d.footType === 'seco' ? 'Pés Secos' : d.footType === 'humido' ? 'Pés Húmidos' : d.footType === 'normal' ? 'Pés Normais' : 'Não especificado'}</p>
+                        <p><strong>Deformidade:</strong> ${d.hasDeformity ? 'Sim' : 'Não'}</p>
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
+        `;
 
-    // 2. PROTOCOLO DE EMERGÊNCIA (se dor >= 7 OU inflamação)
-    if (d.painLevel >= 7 || d.inflammation) {
-        console.log("Aplicando protocolo de emergência - Dor:", d.painLevel, "Inflamação:", d.inflammation);
-        
-        // Tentar diferentes chaves possíveis para o kit de emergência
-        const emergencyKeys = ['emergency_kit_protocol', 'protocolo_emergencia', 'kit_emergencia', 'emergency_protocol'];
-        let emergencyContent = null;
-        
-        for (const key of emergencyKeys) {
-            emergencyContent = findContent(key);
-            if (emergencyContent) {
-                console.log("Encontrado kit de emergência com key:", key);
-                break;
+        // 2. REGRA DE OURO DE HIGIENE (SEMPRE)
+        const hygieneContent = findContent('higiene_rule');
+        if(hygieneContent) {
+            fullHtml += `
+                <div class="p-4 border-l-4 border-green-500 bg-green-50 rounded-lg mb-4 prose max-w-none">
+                    <h3 class="font-bold text-center text-lg mb-3">${hygieneContent.title || 'Regra de Ouro de Higiene'}</h3>
+                    <div class="text-left">${this.processProductMarkers(hygieneContent.content_html)}</div>
+                </div>
+            `;
+        }
+
+        // 3. KIT DE EMERGÊNCIA (CONDIÇÃO: painLevel >= 7 OU inflammation)
+        if (d.painLevel >= 7 || d.inflammation) {
+            const emergencyContent = findContent('emergency_kit_protocol');
+            if(emergencyContent) {
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="text-red-700 font-bold text-center text-lg mb-3">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>${emergencyContent.title || 'Kit de Emergência'}
+                        </h3>
+                        <div class="text-left">${this.processProductMarkers(emergencyContent.content_html)}</div>
+                    </div>
+                `;
             }
         }
         
-        if(emergencyContent) {
-            fullHtml += `
-                <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="text-red-700 font-bold text-center text-lg mb-3">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>${emergencyContent.title || 'Protocolo de Emergência'}
-                    </h3>
-                    <div class="text-left">${this.makeProductsInteractive(emergencyContent.content_html)}</div>
-                </div>
-            `;
-            // Adicionar produtos de emergência/inflamação
-            this.state.appConfig.products.forEach(p => {
-                if(p.category === 'inflamacao_dor' || p.category === 'emergencia') suggestedProducts.add(p.name);
-            });
-        } else {
-            console.log("Nenhum conteúdo de emergência encontrado. Keys tentadas:", emergencyKeys);
-            // Conteúdo fallback para emergência
-            fullHtml += `
-                <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="text-red-700 font-bold text-center text-lg mb-3">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>Protocolo de Emergência
-                    </h3>
-                    <div class="text-left">
-                        <p><strong>Devido ao seu nível de dor (${d.painLevel}/10) ${d.inflammation ? 'e inflamação' : ''}, recomenda-se:</strong></p>
-                        <ul>
-                            <li>Consulta urgente com um profissional de saúde</li>
-                            <li>Aplicação de gelo para reduzir inflamação</li>
-                            <li>Evitar pressão na área afetada</li>
-                            <li>Utilização de calçado adequado e protetor</li>
-                        </ul>
+        // 4. TRATAMENTO PRINCIPAL (ESPECÍFICO PARA O TIPO DE CALO)
+        if (d.callusType) {
+            const callusKey = this.getCallusProtocolKey(d.callusType);
+            const mainProtocol = findContent(callusKey);
+            
+            if(mainProtocol) {
+                const processedContent = this.processProductMarkers(mainProtocol.content_html);
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="font-bold text-center text-lg mb-3">Protocolo para ${d.callusType}</h3>
+                        <div class="text-left">
+                            ${processedContent}
+                            <div class="text-center mt-4">
+                                <button onclick="CallosCareApp.showFullProtocol('${callusKey}')" class="text-blue-600 underline text-sm">
+                                    Veja o tratamento completo
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            `;
-        }
-    }
-    
-    // 3. PROTOCOLO PRINCIPAL PARA O TIPO DE CALO
-    if (d.callusType) {
-        console.log("Procurando protocolo para:", d.callusType);
-        
-        // Mapear tipos de calo para keys possíveis
-        const callusTypeMappings = {
-            'Calo Duro': ['hard_callus_protocol', 'calo_duro_protocol', 'protocolo_calo_duro'],
-            'Calo Mole': ['soft_callus_protocol', 'calo_mole_protocol', 'protocolo_calo_mole'], 
-            'Calo Vascular': ['vascular_callus_protocol', 'calo_vascular_protocol', 'protocolo_calo_vascular'],
-            'Calo Neurovascular': ['neurovascular_callus_protocol', 'calo_neurovascular_protocol', 'protocolo_calo_neurovascular'],
-            'Olho-de-peixe': ['verruga_protocol', 'olho_de_peixe_protocol', 'protocolo_verruga']
-        };
-
-        let mainProtocol = null;
-        const possibleKeys = callusTypeMappings[d.callusType] || [
-            d.callusType.toLowerCase().replace(/ /g, '_') + '_protocol',
-            'protocolo_' + d.callusType.toLowerCase().replace(/ /g, '_')
-        ];
-
-        console.log("Keys a tentar para", d.callusType + ":", possibleKeys);
-
-        for (const key of possibleKeys) {
-            mainProtocol = findContent(key);
-            if (mainProtocol) {
-                console.log("Encontrado protocolo com key:", key);
-                break;
+                `;
             }
         }
 
-        if(mainProtocol) {
-            fullHtml += `
-                <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="font-bold text-center text-lg mb-3">Protocolo para ${d.callusType}</h3>
-                    <div class="text-left">${this.makeProductsInteractive(mainProtocol.content_html)}</div>
-                </div>
-            `;
-        } else {
-            console.log("Nenhum protocolo específico encontrado para:", d.callusType);
-            // Conteúdo fallback genérico
-            fullHtml += `
-                <div class="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="font-bold text-center text-lg mb-3">Recomendações para ${d.callusType}</h3>
-                    <div class="text-left">
-                        <p>Para tratamento de ${d.callusType.toLowerCase()}, recomenda-se:</p>
-                        <ul>
-                            <li>Hidratação regular da área afetada</li>
-                            <li>Uso de proteções adequadas</li>
-                            <li>Consulta com podologista para avaliação profissional</li>
-                            <li>Utilização de calçado adequado</li>
-                        </ul>
+        // 5. NOTA SOBRE DEFORMIDADES (CONDIÇÃO: hasDeformity === true)
+        if (d.hasDeformity) {
+            const deformityContent = findContent('deformity_info');
+            if(deformityContent) {
+                fullHtml += `
+                    <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
+                        <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
+                        <div class="text-left">${this.processProductMarkers(deformityContent.content_html)}</div>
+                        <div class="text-center mt-4">
+                            <button onclick="CallosCareApp.showFullProtocol('deformity_info')" class="text-blue-600 underline text-sm">
+                                veja mais informação
+                            </button>
+                        </div>
                     </div>
-                </div>
-            `;
-        }
-    }
-
-    // 4. RECOMENDAÇÕES ADICIONAIS BASEADAS NAS RESPOSTAS
-    if (d.hasDeformity) {
-        console.log("Procurando informação sobre deformidades");
-        const deformityKeys = ['deformity_info', 'deformidades_info', 'info_deformidades'];
-        let deformityInfo = null;
-        
-        for (const key of deformityKeys) {
-            deformityInfo = findContent(key);
-            if (deformityInfo) break;
+                `;
+            }
         }
 
-        if(deformityInfo) {
-            fullHtml += `
-                <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
-                    <div class="text-left">${this.makeProductsInteractive(deformityInfo.content_html)}</div>
-                </div>
-            `;
-        } else {
-            fullHtml += `
-                <div class="p-4 border-l-4 border-yellow-500 bg-yellow-50 rounded-lg mb-4 prose max-w-none">
-                    <h3 class="font-bold text-center text-lg mb-3">Nota sobre Deformidades</h3>
-                    <div class="text-left">
-                        <p><strong>Presença de deformidade detectada:</strong> Recomenda-se avaliação por profissional para correção adequada e prevenção de complicações.</p>
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    // 5. PRODUTOS SUGERIDOS BASEADOS NAS RESPOSTAS
-    console.log("Produtos disponíveis:", this.state.appConfig.products);
-    
-    this.state.appConfig.products.forEach(p => {
-        // Produtos baseados no tipo de pé
-        if(d.footType === 'seco' && (p.category === 'hidratacao' || p.tags?.includes('seco'))) suggestedProducts.add(p.name);
-        if(d.footType === 'humido' && (p.category === 'controlo_humidade' || p.tags?.includes('humido'))) suggestedProducts.add(p.name);
+        // 6. GERAR LISTA DE PRODUTOS SUGERIDOS (REGRAS 1, 2 E 3)
+        this.generateSuggestedProducts(d, suggestedProducts);
+        d.suggestedProducts = Array.from(suggestedProducts);
         
-        // Produtos para inflamação/dor
-        if((d.inflammation || d.painLevel >= 7) && (p.category === 'inflamacao_dor' || p.tags?.includes('inflamacao') || p.tags?.includes('dor'))) suggestedProducts.add(p.name);
-        
-        // Produtos gerais que sempre podem ser úteis
-        if(p.category === 'protecao' || p.tags?.includes('basico')) suggestedProducts.add(p.name);
-    });
-
-    d.suggestedProducts = Array.from(suggestedProducts);
-    d.interactiveSelections = d.interactiveSelections || {};
-    
-    console.log("Produtos sugeridos finais:", d.suggestedProducts);
-    
-    return { fullHtml, suggestedProducts: d.suggestedProducts };
-},
-    // NOVA FUNÇÃO: TORNAR PRODUTOS INTERATIVOS
-    makeProductsInteractive(html) {
-        const productNames = this.state.appConfig.products.map(p => p.name);
-        
-        let interactiveHtml = html;
-        productNames.forEach(productName => {
-            const regex = new RegExp(`\\b${productName}\\b`, 'gi');
-            interactiveHtml = interactiveHtml.replace(regex, 
-                `<span class="text-blue-600 underline cursor-pointer font-medium" 
-                      onclick="CallosCareApp.showProductSelection('${productName}')">${productName}</span>`
-            );
-        });
-        
-        return interactiveHtml;
+        return { fullHtml, suggestedProducts: d.suggestedProducts };
     },
 
-    // NOVA FUNÇÃO: MOSTRAR SELEÇÃO DE PRODUTO
-    showProductSelection(productName) {
-        const product = this.state.appConfig.products.find(p => p.name === productName);
-        if (!product) return;
+    // FUNÇÃO AUXILIAR: OBTER CHAVE DO PROTOCOLO PELO TIPO DE CALO
+    getCallusProtocolKey(callusType) {
+        const mappings = {
+            'Calo Duro': 'calo_duro_protocol',
+            'Calo Mole': 'calo_mole_protocol',
+            'Calo Vascular': 'calo_vascular_protocol', 
+            'Calo Neurovascular': 'calo_neurovascular_protocol',
+            'Olho-de-peixe': 'verruga_protocol'
+        };
+        return mappings[callusType] || (callusType.toLowerCase().replace(/ /g, '_') + '_protocol');
+    },
+
+    // FUNÇÃO CRÍTICA: PROCESSAR MARCADORES DE PRODUTOS {products:categoria}
+    processProductMarkers(html) {
+        if (!html) return html;
+        
+        // Encontrar todos os marcadores {products:xxxx}
+        const productMarkerRegex = /\{products:([^}]+)\}/g;
+        let processedHtml = html;
+        let match;
+
+        while ((match = productMarkerRegex.exec(html)) !== null) {
+            const fullMatch = match[0];
+            const category = match[1];
+            
+            // Encontrar produtos desta categoria
+            const categoryProducts = this.state.appConfig.products.filter(p => 
+                p.category && p.category.toLowerCase() === category.toLowerCase()
+            );
+            
+            if (categoryProducts.length > 0) {
+                // Verificar se o utilizador já selecionou produtos para esta categoria
+                const userSelected = this.state.diagnosis.selectedProducts?.[category] || [];
+                let displayProduct = categoryProducts[0].name; // Produto padrão
+                
+                if (userSelected.length > 0) {
+                    // Usar os produtos selecionados pelo utilizador
+                    displayProduct = userSelected.join(' e ');
+                }
+                
+                // Criar elemento interativo
+                const interactiveElement = `
+                    <span class="product-interactive text-blue-600 underline cursor-pointer font-medium ${userSelected.length > 0 ? 'product-selected' : ''}" 
+                          onclick="CallosCareApp.showProductSelection('${category}')">
+                        ${displayProduct}
+                    </span>
+                `;
+                
+                processedHtml = processedHtml.replace(fullMatch, interactiveElement);
+            }
+        }
+        
+        return processedHtml;
+    },
+
+    // FUNÇÃO: GERAR PRODUTOS SUGERIDOS BASEADOS NAS REGRAS
+    generateSuggestedProducts(d, suggestedProductsSet) {
+        // REGRA 1: Tipo de Pé
+        if (d.footType === 'seco') {
+            this.state.appConfig.products.forEach(p => {
+                if (p.category === 'hidratacao') suggestedProductsSet.add(p.name);
+            });
+        } else if (d.footType === 'humido') {
+            this.state.appConfig.products.forEach(p => {
+                if (p.category === 'controlo_humidade') suggestedProductsSet.add(p.name);
+            });
+        }
+
+        // REGRA 2: Inflamação
+        if (d.inflammation) {
+            this.state.appConfig.products.forEach(p => {
+                if (p.category === 'inflamacao_dor') suggestedProductsSet.add(p.name);
+            });
+        }
+
+        // REGRA 3: Produtos selecionados pelo utilizador
+        if (d.selectedProducts) {
+            Object.values(d.selectedProducts).forEach(products => {
+                products.forEach(productName => suggestedProductsSet.add(productName));
+            });
+        }
+    },
+
+    // FUNÇÃO: MOSTRAR SELEÇÃO DE PRODUTOS POR CATEGORIA
+    showProductSelection(category) {
+        const categoryProducts = this.state.appConfig.products.filter(p => 
+            p.category && p.category.toLowerCase() === category.toLowerCase()
+        );
+        
+        if (categoryProducts.length === 0) return;
+
+        const currentSelections = this.state.diagnosis.selectedProducts?.[category] || [];
 
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
             <div class="modal-content">
                 <span onclick="this.parentElement.parentElement.remove()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
-                <h3 class="text-xl font-bold mb-4">${product.name}</h3>
-                <div class="prose max-w-none mb-4">
-                    <p><strong>Categoria:</strong> ${product.category}</p>
-                    <p><strong>Descrição:</strong> ${product.description || 'Sem descrição disponível'}</p>
-                    ${product.benefits ? `<p><strong>Benefícios:</strong> ${product.benefits}</p>` : ''}
+                <h3 class="text-xl font-bold mb-4">Selecionar Produtos - ${category}</h3>
+                <p class="text-gray-600 mb-4">Selecione um ou mais produtos:</p>
+                
+                <div class="space-y-3 max-h-96 overflow-y-auto">
+                    ${categoryProducts.map(product => `
+                        <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" 
+                                   value="${product.name}"
+                                   ${currentSelections.includes(product.name) ? 'checked' : ''}
+                                   class="mr-3 h-5 w-5 text-blue-600 product-checkbox">
+                            <div>
+                                <div class="font-medium">${product.name}</div>
+                                ${product.description ? `<div class="text-sm text-gray-500">${product.description}</div>` : ''}
+                            </div>
+                        </label>
+                    `).join('')}
                 </div>
-                <div class="flex justify-between items-center">
-                    <label class="flex items-center">
-                        <input type="checkbox" id="product-select-${product.id}" 
-                               ${this.state.diagnosis.interactiveSelections?.[product.name] ? 'checked' : ''}
-                               onchange="CallosCareApp.toggleProductSelection('${product.name}', this.checked)"
-                               class="mr-2 h-5 w-5 text-blue-600">
-                        <span>Adicionar à minha lista</span>
-                    </label>
-                    <button onclick="this.parentElement.parentElement.parentElement.remove()" 
-                            class="bg-blue-600 text-white px-4 py-2 rounded-lg">
+                
+                <div class="flex justify-between items-center mt-6">
+                    <span class="text-sm text-gray-500">Selecione múltiplos produtos se desejar</span>
+                    <button onclick="CallosCareApp.confirmProductSelection('${category}')" 
+                            class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                        Confirmar Seleção
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.style.display = 'block';
+    },
+
+    // FUNÇÃO: CONFIRMAR SELEÇÃO DE PRODUTOS
+    confirmProductSelection(category) {
+        const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+        const selectedProducts = Array.from(checkboxes).map(cb => cb.value);
+        
+        // Atualizar estado
+        if (!this.state.diagnosis.selectedProducts) {
+            this.state.diagnosis.selectedProducts = {};
+        }
+        
+        if (selectedProducts.length > 0) {
+            this.state.diagnosis.selectedProducts[category] = selectedProducts;
+        } else {
+            delete this.state.diagnosis.selectedProducts[category];
+        }
+        
+        // Fechar modal e atualizar renderização
+        document.querySelector('.modal')?.remove();
+        this.render();
+    },
+
+    // FUNÇÃO: MOSTRAR PROTOCOLO COMPLETO
+    showFullProtocol(contentKey) {
+        const content = this.state.appConfig.app_content.find(c => c.content_key === contentKey);
+        if (!content) return;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <span onclick="this.parentElement.parentElement.remove()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
+                <h3 class="text-2xl font-bold mb-4">${content.title}</h3>
+                <div class="prose max-w-none max-h-96 overflow-y-auto">
+                    ${this.processProductMarkers(content.content_html)}
+                </div>
+                <div class="text-center mt-6">
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                            class="bg-blue-600 text-white px-6 py-2 rounded-lg">
                         Fechar
                     </button>
                 </div>
@@ -401,56 +459,35 @@ generateTreatmentHtml(d) {
         modal.style.display = 'block';
     },
 
-    // NOVA FUNÇÃO: ALTERNAR SELEÇÃO DE PRODUTO
-    toggleProductSelection(productName, isSelected) {
-        if (!this.state.diagnosis.interactiveSelections) {
-            this.state.diagnosis.interactiveSelections = {};
-        }
-        
-        if (isSelected) {
-            this.state.diagnosis.interactiveSelections[productName] = true;
-            // Adicionar à lista de produtos sugeridos se não estiver já
-            if (!this.state.diagnosis.suggestedProducts.includes(productName)) {
-                this.state.diagnosis.suggestedProducts.push(productName);
-            }
-        } else {
-            delete this.state.diagnosis.interactiveSelections[productName];
-            // Remover da lista de produtos sugeridos
-            const index = this.state.diagnosis.suggestedProducts.indexOf(productName);
-            if (index > -1) {
-                this.state.diagnosis.suggestedProducts.splice(index, 1);
-            }
-        }
-        
-        // Atualizar a renderização para refletir as mudanças
-        this.render();
-    },
-
-    // NOVA FUNÇÃO: MOSTRAR CATÁLOGO COMPLETO
+    // FUNÇÃO: MOSTRAR CATÁLOGO COMPLETO
     showFullProductCatalog() {
         const products = this.state.appConfig.products;
+        const categories = [...new Set(products.map(p => p.category))].filter(Boolean);
+        
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 800px;">
                 <span onclick="this.parentElement.parentElement.remove()" class="float-right text-2xl font-bold cursor-pointer">&times;</span>
                 <h3 class="text-2xl font-bold mb-6 text-center">Catálogo Completo de Produtos</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                    ${products.map(product => `
-                        <div class="border border-gray-200 rounded-lg p-4">
-                            <h4 class="font-bold text-lg mb-2">${product.name}</h4>
-                            <p class="text-sm text-gray-600 mb-2"><strong>Categoria:</strong> ${product.category}</p>
-                            <p class="text-sm mb-3">${product.description || 'Sem descrição disponível'}</p>
-                            <label class="flex items-center text-sm">
-                                <input type="checkbox" 
-                                       ${this.state.diagnosis.interactiveSelections?.[product.name] ? 'checked' : ''}
-                                       onchange="CallosCareApp.toggleProductSelection('${product.name}', this.checked)"
-                                       class="mr-2 h-4 w-4 text-blue-600">
-                                Selecionar
-                            </label>
+                
+                ${categories.map(category => {
+                    const categoryProducts = products.filter(p => p.category === category);
+                    return `
+                        <div class="mb-6">
+                            <h4 class="font-bold text-lg mb-3 border-b pb-2">${category}</h4>
+                            <div class="grid grid-cols-1 gap-3">
+                                ${categoryProducts.map(product => `
+                                    <div class="border border-gray-200 rounded-lg p-4">
+                                        <h5 class="font-bold text-md mb-1">${product.name}</h5>
+                                        ${product.description ? `<p class="text-sm text-gray-600 mb-2">${product.description}</p>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
                         </div>
-                    `).join('')}
-                </div>
+                    `;
+                }).join('')}
+                
                 <div class="text-center mt-6">
                     <button onclick="this.parentElement.parentElement.remove()" 
                             class="bg-blue-600 text-white px-6 py-2 rounded-lg">
@@ -464,6 +501,7 @@ generateTreatmentHtml(d) {
         modal.style.display = 'block';
     },
 
+    // RENDER - ATUALIZADO PARA STEP5_RESULTS
     render() {
         this.updateProgressBar();
         const container = document.getElementById('calloscare-main-content');
@@ -567,7 +605,7 @@ generateTreatmentHtml(d) {
                 break;
             case 'step5_results':
                 const results = this.generateTreatmentHtml(d);
-                const selectedProducts = d.interactiveSelections ? Object.keys(d.interactiveSelections) : [];
+                const selectedProducts = this.getAllSelectedProducts();
                 
                 content = `
                     <h2 class="text-2xl font-semibold text-center mb-6">Plano de Tratamento Individualizado</h2>
@@ -602,19 +640,8 @@ generateTreatmentHtml(d) {
                             <ul class="list-disc pl-5 space-y-1 text-left">
                                 ${(d.suggestedProducts && d.suggestedProducts.length > 0) ? 
                                     d.suggestedProducts.map(p => `
-                                        <li class="${selectedProducts.includes(p) ? 'text-green-600 font-medium' : ''}">
+                                        <li class="${selectedProducts.includes(p) ? 'text-green-600 font-medium' : 'text-gray-700'}">
                                             ${p}
-                                            ${!selectedProducts.includes(p) ? `
-                                                <button onclick="CallosCareApp.toggleProductSelection('${p}', true)" 
-                                                        class="ml-2 text-blue-600 text-xs underline">
-                                                    adicionar
-                                                </button>
-                                            ` : `
-                                                <button onclick="CallosCareApp.toggleProductSelection('${p}', false)" 
-                                                        class="ml-2 text-red-600 text-xs underline">
-                                                    remover
-                                                </button>
-                                            `}
                                         </li>
                                     `).join('') : 
                                     '<li class="text-gray-500">Nenhum produto específico sugerido.</li>'
@@ -652,6 +679,14 @@ generateTreatmentHtml(d) {
                 break;
         }
         container.innerHTML = `<div class="calloscare-step active">${content}</div>`;
+    },
+
+    // FUNÇÃO AUXILIAR: OBTER TODOS OS PRODUTOS SELECIONADOS
+    getAllSelectedProducts() {
+        const d = this.state.diagnosis;
+        if (!d.selectedProducts) return [];
+        
+        return Object.values(d.selectedProducts).flat();
     }
 };
 
