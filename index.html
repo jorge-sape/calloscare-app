@@ -55,10 +55,10 @@
 </div>
 
 <script>
-// CallosCare App v4.8 - SISTEMA INTELIGENTE COMPLETO
+// CallosCare App v4.9 - SISTEMA INTELIGENTE COMPLETO
 const CallosCareApp = {
     API_BASE_URL: '/api',
-    VERSION: 'v4.8',
+    VERSION: 'v4.9',
     state: { 
         user: null, 
         appConfig: null, 
@@ -72,6 +72,7 @@ const CallosCareApp = {
         this.loadUserFromLocalStorage();
         try { 
             this.state.appConfig = await this.api.getAppConfig(); 
+        this.ensureDisinfectionProducts(); 
             this.state.currentStep = this.state.user ? 'home' : 'identification';
         } catch (error) { 
             console.error("Initialization Error:", error); 
@@ -229,46 +230,86 @@ const CallosCareApp = {
         }
     },
 
-    // SISTEMA DE INVESTIGAÇÃO DE CAUSA RAIZ
-    startCauseInvestigation() {
-        this.state.investigation = {
-            currentQuestion: 0,
-            answers: {},
-            recommendations: []
-        };
-        this.goToStep('step6_investigation');
-    },
+    
 
-    answerInvestigationQuestion(answer) {
-        const currentQuestion = this.getCurrentInvestigationQuestion();
-        if (!currentQuestion) return;
-
-        this.state.investigation.answers[currentQuestion.question_key] = answer;
-        
-        // Se resposta é Sim, adicionar recomendação
-        if (answer === true && currentQuestion.investigation_advice) {
-            this.state.investigation.recommendations.push({
-                question: currentQuestion.question_text,
-                advice: currentQuestion.investigation_advice,
-                products: currentQuestion.related_products || []
-            });
+    
+// =============================================
+// BLOCO 1 + 2: NOVA INVESTIGAÇÃO
+// =============================================
+getInvestigationQuestions() {
+    if (this.state.appConfig.cause_investigation_questions) {
+        return this.state.appConfig.cause_investigation_questions;
+    }
+    return [
+        {
+            category: "📁 CALÇADO",
+            questions: [
+                {
+                    question_key: "shoe_too_short",
+                    question_text: "É demasiado pequeno (curto)?",
+                    investigation_advice: "Se o sapato é curto, os dedos ficam encavalitados. Solução: compre um número maior.",
+                    related_products: ["calçado_maior"],
+                    color: "red"
+                }
+            ]
         }
+    ];
+},
 
-        // Avançar para próxima pergunta ou finalizar
-        this.state.investigation.currentQuestion++;
-        
-        if (this.state.investigation.currentQuestion >= this.state.appConfig.cause_investigation.length) {
-            this.goToStep('step7_investigation_results');
-        } else {
-            this.render();
+getCurrentInvestigationQuestion() {
+    const allQuestions = this.getAllInvestigationQuestionsFlat();
+    return allQuestions[this.state.investigation.currentQuestion];
+},
+
+getCurrentInvestigationGroup() {
+    const questions = this.getInvestigationQuestions();
+    let questionIndex = 0;
+    for (const group of questions) {
+        for (const question of group.questions) {
+            if (questionIndex === this.state.investigation.currentQuestion) {
+                return group;
+            }
+            questionIndex++;
         }
-    },
+    }
+    return null;
+},
 
-    getCurrentInvestigationQuestion() {
-        return this.state.appConfig.cause_investigation?.[this.state.investigation.currentQuestion];
-    },
+getAllInvestigationQuestionsFlat() {
+    const groups = this.getInvestigationQuestions();
+    return groups.flatMap(group => group.questions);
+},
 
-    // FUNÇÃO PRINCIPAL - GERAR TRATAMENTO COM SISTEMA INTELIGENTE
+getTotalInvestigationQuestions() {
+    return this.getAllInvestigationQuestionsFlat().length;
+},
+
+goToNextInvestigationQuestion() {
+    this.state.investigation.currentQuestion++;
+    if (this.state.investigation.currentQuestion >= this.getTotalInvestigationQuestions()) {
+        this.goToStep('step7_investigation_results');
+    } else {
+        this.render();
+    }
+},
+
+answerInvestigationQuestion(answer) {
+    const currentGroup = this.getCurrentInvestigationGroup();
+    const currentQuestion = this.getCurrentInvestigationQuestion();
+    if (!currentQuestion) return;
+    this.state.investigation.answers[currentQuestion.question_key] = answer;
+    if (answer === true && currentQuestion.investigation_advice) {
+        this.state.investigation.recommendations.push({
+            category: currentGroup.category,
+            question: currentQuestion.question_text,
+            advice: currentQuestion.investigation_advice,
+            products: currentQuestion.related_products || [],
+            color: currentQuestion.color || 'blue'
+        });
+    }
+    this.goToNextInvestigationQuestion();
+},
+// FUNÇÃO PRINCIPAL - GERAR TRATAMENTO COM SISTEMA INTELIGENTE
     generateTreatmentHtml(d) {
         let fullHtml = '';
         let suggestedProducts = new Set();
@@ -532,32 +573,31 @@ const CallosCareApp = {
     },
 
     renderContentSection(content, color, defaultTitle = null, icon = null, contentKey = null) {
-        const colorClasses = {
-            'green': 'border-green-500 bg-green-50',
-            'red': 'border-red-500 bg-red-50 text-red-700',
-            'blue': 'border-blue-500 bg-blue-50', 
-            'yellow': 'border-yellow-500 bg-yellow-50'
-        };
-
-        const iconHtml = icon ? `<i class="fas fa-${icon} mr-2"></i>` : '';
-        const seeMoreBtn = contentKey && content.content_html?.length > 200 ? `
-            <div class="text-center mt-4">
-                <button onclick="CallosCareApp.showFullProtocol('${contentKey}')" class="text-blue-600 underline text-sm">
-                    Veja o tratamento completo
-                </button>
-            </div>
-        ` : '';
-
-        return `
-            <div class="p-4 border-l-4 ${colorClasses[color]} rounded-lg mb-4 prose max-w-none">
-                <h3 class="font-bold text-center text-lg mb-3">
-                    ${iconHtml}${content.title || defaultTitle}
-                </h3>
-                <div class="text-left">${this.processProductMarkers(content.content_html)}</div>
-                ${seeMoreBtn}
-            </div>
-        `;
-    },
+    const colorClasses = {
+        'green': 'border-green-500 bg-green-50',
+        'red': 'border-red-500 bg-red-50',
+        'blue': 'border-blue-500 bg-blue-50', 
+        'yellow': 'border-yellow-500 bg-yellow-50'
+    };
+    const iconHtml = icon ? `<i class="fas fa-${icon} mr-2"></i>` : '';
+    const seeMoreBtn = contentKey ? `
+        <div class="text-center mt-4">
+            <button onclick="CallosCareApp.showFullProtocol('${contentKey}')" 
+                    class="bg-${color}-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-${color}-700 transition-colors inline-flex items-center">
+                <i class="fas fa-book-open mr-2"></i>Ver Tratamento Completo
+            </button>
+        </div>
+    ` : '';
+    return `
+        <div class="p-4 border-l-4 ${colorClasses[color]} rounded-lg mb-4 prose max-w-none">
+            <h3 class="font-bold text-center text-lg mb-3">
+                ${iconHtml}${content.title || defaultTitle}
+            </h3>
+            <div class="text-left">${this.processProductMarkers(content.content_html)}</div>
+            ${seeMoreBtn}
+        </div>
+    `;
+},
 
     getCallusProtocolKey(callusType) {
         const mappings = {
@@ -1332,6 +1372,20 @@ const CallosCareApp = {
             p.product_name === productName
         );
         return product?.category || 'outros';
+    },
+
+    ensureDisinfectionProducts() {
+        const disinfectionProducts = [
+            { product_name: "Povidona-iodada", category: "desinfeccao", description: "Antisséptico para desinfetar a área antes do tratamento" },
+            { product_name: "Clorexidina", category: "desinfeccao", description: "Solução antisséptica para higiene dos pés" },
+            { product_name: "Álcool 70º", category: "desinfeccao", description: "Para desinfetar utensílios e superfícies" }
+        ];
+        if (this.state.appConfig.interactive_products) {
+            disinfectionProducts.forEach(newProduct => {
+                const exists = this.state.appConfig.interactive_products.some(p => p.product_name === newProduct.product_name);
+                if (!exists) this.state.appConfig.interactive_products.push(newProduct);
+            });
+        }
     },
 
     removeProductFromSelection(productName) {
