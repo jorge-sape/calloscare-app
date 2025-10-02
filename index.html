@@ -101,50 +101,58 @@ const CallosCareApp = {
 
     // Processar marcadores de produtos no texto
     processProductMarkers(html) {
-        if (!html) return html;
-        
-        const productMarkerRegex = /\{products:([^}]+)\}/g;
-        let processedHtml = html;
-        let match;
+    if (!html) return html;
+    
+    const productMarkerRegex = /\{products:([^}]+)\}/g;
+    let processedHtml = html;
+    let match;
 
-        while ((match = productMarkerRegex.exec(html)) !== null) {
-            const fullMatch = match[0];
-            const category = match[1];
+    // MAPEAMENTO DE CATEGORIAS - CORREÇÃO TEMPORÁRIA
+    const categoryMapping = {
+        'esfoliacao': ['Lixa de pé uso único Gramagem 80/120', 'Lixa de pé uso único Gramagem 180/240', 'Luvas de Esfoliação'],
+        'hidratacao': ['Creme com Ureia 10-20%', 'Creme com Ureia 20-40%', 'Óleo de Coco (Óleos para Pés)'],
+        'protecao': ['Protetores para Dedos (Tubos/Anéis)', 'Almofadas de Silicone', 'Protetores de Silicone'],
+        'controlo_humidade': ['Pó Antifúngico', 'Spray Secante'],
+        'desinfeccao': ['Povidona-iodada', 'Álcool 70º', 'Clorexidina'],
+        'inflamacao_dor': ['Ibuprofeno', 'Paracetamol', 'Gel Anti-inflamatório'],
+        'medicacao': ['Ibuprofeno', 'Paracetamol'],
+        'verruga_tratamento': ['Pensos com Ácido Salicílico'],
+        'palmilhas': ['Palmilhas Ortopédicas', 'Palmilhas de Amortecimento']
+    };
+
+    while ((match = productMarkerRegex.exec(html)) !== null) {
+        const fullMatch = match[0];
+        const category = match[1];
+        
+        // Verificar se temos produtos para esta categoria
+        const categoryProducts = categoryMapping[category] || [];
+        
+        if (categoryProducts.length > 0) {
+            const interactiveElement = `
+                <span class="product-marker" data-category="${category}">
+                    ${categoryProducts.map(product => {
+                        const isSelected = false; // Temporário
+                        const className = isSelected ? 'inline-product-selected' : 'inline-product';
+                        return `<span class="${className}" 
+                                  onclick="CallosCareApp.toggleInlineProductSelection('${product.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}')">
+                                ${product}
+                              </span>`;
+                    }).join('<span class="sep">, </span>')}
+                    <button class="btn-edit-products" onclick="CallosCareApp.showProductSelection('${category.replace(/'/g, "\\'")}')">
+                        Editar
+                    </button>
+                </span>
+            `;
             
-            const categoryProducts = this.state.appConfig.interactive_products?.filter(p => 
-                p.category === category
-            ) || [];
-            
-            if (categoryProducts.length > 0) {
-                // Obter produtos selecionados e sugeridos
-                const selectedProducts = this.state.diagnosis.selectedProducts?.[category] || [];
-                const suggestedProducts = categoryProducts.slice(0, 3).map(p => p.product_name); // Top 3 por prioridade
-                
-                const allProducts = Array.from(new Set([...suggestedProducts, ...selectedProducts]));
-                
-                const interactiveElement = `
-                    <span class="product-marker" data-category="${category}">
-                        ${allProducts.map(product => {
-                            const isSelected = selectedProducts.includes(product);
-                            const className = isSelected ? 'inline-product-selected' : 'inline-product';
-                            return `<span class="${className}" 
-                                      onclick="CallosCareApp.toggleInlineProductSelection('${product.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}')">
-                                    ${product}
-                                  </span>`;
-                        }).join('<span class="sep">, </span>')}
-                        <button class="btn-edit-products" onclick="CallosCareApp.showProductSelection('${category.replace(/'/g, "\\'")}')">
-                            Editar
-                        </button>
-                    </span>
-                `;
-                
-                processedHtml = processedHtml.replace(fullMatch, interactiveElement);
-            }
+            processedHtml = processedHtml.replace(fullMatch, interactiveElement);
+        } else {
+            // Fallback - mostrar a categoria como texto
+            processedHtml = processedHtml.replace(fullMatch, `<strong>[Produtos de ${category}]</strong>`);
         }
-        
-        return processedHtml;
-    },
-
+    }
+    
+    return processedHtml;
+},
     // Alternar seleção de produto inline
     toggleInlineProductSelection(productName, categorySlug) {
         if (!this.state.diagnosis.selectedProducts) {
